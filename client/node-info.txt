@@ -1,0 +1,30 @@
+==================== VPS-ChatGPT 节点信息（2026-10-01 部署）====================
+
+服务器 IP : 104.129.181.52   （搬瓦工 洛杉矶 USCA_2，免费迁移自 Fremont）
+端口      : 443
+协议      : VLESS + Reality (Xray)
+UUID      : b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e
+Public Key: A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20
+Short ID  : 4ea0c2144409a72b
+SNI/伪装  : www.lovelive-anime.jp   ⚠️ 不要用 www.microsoft.com（其抗量子TLS会导致握手失败）
+Flow      : xtls-rprx-vision
+指纹      : chrome
+
+---------- 一键导入链接（v2rayN / Shadowrocket / v2rayNG 剪贴板导入）----------
+
+vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
+
+---------- 服务器管理 ----------
+
+SSH 免密登录 : ssh vps-chatgpt     （本机已配置 ~/.ssh/vps，密钥 ~/.ssh/vps_chatgpt）
+面板         : https://kiwivm.64clouds.com  （搬瓦工 KiwiVM，可免费换机房/重装）
+SSH 密码登录 : 已禁用（仅密钥），防火墙只开 22/443
+
+---------- 踩坑记录（排查重复问题先看这里）----------
+
+1. IP 被墙症状：TCP能连、Reality握手能完成、回程数据被掐（服务端日志显示请求已转发但客户端收不到）
+   → 解法：KiwiVM 免费迁移机房换 IP（Migrate to another datacenter）
+2. Reality 握手秒失败、服务器日志 "processed invalid connection"，任何网络路径（含服务器自环）都失败
+   → 原因：伪装目标启用了 X25519MLKEM768 抗量子TLS（微软/苹果/谷歌/亚马逊系站点陆续开启）
+   → 解法：换普通 X25519 的伪装站（当前 www.lovelive-anime.jp，备选 www.samsung.com、www.nvidia.com）
+   → 排查命令：F:\vps\deploy\desttest.sh 会自动逐个候选测试

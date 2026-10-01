@@ -1,0 +1,48 @@
+# Clash Party / Clash Verge Rev 独立配置（2026-10-01 实际部署参数）
+# 效果：ChatGPT/OpenAI 全家桶走自建 VPS（固定IP 104.129.181.52），其余全部直连
+# 注意：启用此配置时其他代理需求（YouTube等）不走机场——推荐优先用
+#       clash-party-override.js 覆写方式（机场照常 + ChatGPT 走 VPS）
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: warning
+
+dns:
+  enable: true
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+
+proxies:
+  - name: "VPS-ChatGPT"
+    type: vless
+    server: 104.129.181.52
+    port: 443
+    uuid: b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e
+    network: tcp
+    udp: true
+    tls: true
+    flow: xtls-rprx-vision
+    servername: www.lovelive-anime.jp
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20
+      short-id: "4ea0c2144409a72b"
+
+rules:
+  # ---- ChatGPT / OpenAI 全家桶 → VPS ----
+  - DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,openai.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,oaistatic.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,oaiusercontent.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,sora.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,openaiapi-site.azureedge.net,VPS-ChatGPT
+  - DOMAIN-SUFFIX,auth0.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,livekit.cloud,VPS-ChatGPT
+  - DOMAIN-SUFFIX,challenges.cloudflare.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,featuregates.org,VPS-ChatGPT
+  - DOMAIN-SUFFIX,statsig.com,VPS-ChatGPT
+
+  # ---- 其余全部直连 ----
+  - MATCH,DIRECT

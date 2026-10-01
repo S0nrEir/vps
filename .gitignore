@@ -1,0 +1,11 @@
+# 含密钥/密码的一次性工具，不入库（仅本地保留）
+deploy/install_key.py
+
+# 客户端二进制与运行日志（体积大，可随时从 GitHub Xray-core releases 重新下载）
+client/xray/
+
+# 日志与临时文件
+*.log
+*.zip
+*.bak
+__pycache__/

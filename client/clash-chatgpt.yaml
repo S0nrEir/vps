@@ -35,6 +35,7 @@ rules:
   - DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,openai.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,oaistatic.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,oaistatsig.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,oaiusercontent.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,sora.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,openaiapi-site.azureedge.net,VPS-ChatGPT

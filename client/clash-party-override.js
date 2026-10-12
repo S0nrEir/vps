@@ -21,9 +21,11 @@ function main(config) {
     }
   });
 
-  // 2) 把 ChatGPT/OpenAI 规则插到最前面（优先于机场的任何规则）
+  // 2) 公司内网域名直连：订阅最后的 MATCH,BoostNet 兜底会把 *.cyou-inc.com 送去代理节点，
+  //    节点在公网连不到 10.x 内网，mihomo 拨号失败后给浏览器回 502。放最前面优先直连。
   config.rules = config.rules || [];
   config.rules.unshift(
+    "DOMAIN-SUFFIX,cyou-inc.com,DIRECT",
     "DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT",
     "DOMAIN-SUFFIX,openai.com,VPS-ChatGPT",
     "DOMAIN-SUFFIX,oaistatic.com,VPS-ChatGPT",

@@ -91,6 +91,16 @@ curl -sv --resolve www.microsoft.com:443:<IP> https://www.microsoft.com
 - 执行日志在同目录 `<id>.log`，排障先看它
 - JS 覆写要求：导出 `function main(config)`，返回 config；连字符键一律加引号
 
+**2026-10-08 补充（新版 Clash Party，E:\clash party 便携版实测）**：
+- **外部改 override.yaml 不会热生效**：新版源码只在内核启动/订阅导入更新时才读 override.yaml 并重算配置，
+  对 override 目录和 override.yaml 均无文件监听。手动放文件+改注册表后，必须**重启 Clash Party**
+  （或内核）才生效。验证标志：`data/work/config.yaml` 的修改时间刷新且含 `VPS-ChatGPT`。
+- 数据目录不固定在 %APPDATA%，**以 mihomo.exe 命令行 `-d` 参数为准**
+   （`wmic process where "name='mihomo.exe'" get CommandLine` → `E:\clash party\data\work`）。
+- 覆写日志 `<id>.log` 出现 `脚本执行成功` 仅代表 JS 跑通，还需看 work/config.yaml 是否真的注入。
+- 验证分流时注意：若终端设了 `HTTP_PROXY/HTTPS_PROXY` 环境变量（本机有别的代理占 7899），
+  curl 加 `--noproxy "*"` 会**连 `-x` 一起屏蔽**导致直连测试、结论全错——只加 `-x http://127.0.0.1:7890` 即可（显式 -x 优先于环境变量）。
+
 ---
 
 ## 小坑收集（工具链相关）

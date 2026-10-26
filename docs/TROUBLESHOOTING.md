@@ -1,5 +1,36 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-10-26（下午）：IP 第二次被 GFW 封锁 → dialer-proxy 经机场链式绕行
+
+**现象**：当天 10:13 起 ChatGPT 走 VPS 开始间歇性失败（上午刚做完路由修复、11:05 验证通过），16:38 后完全中断，全天 mihomo 日志 3473 次 `dial tcp 104.129.181.52:443: i/o timeout`。
+
+**定位**（分层证据）：
+- KiwiVM 面板：VM Running、负载 0.00、流量/磁盘/内存正常 → 服务端无恙
+- check-host.net 全球 8 节点（含美/越/欧）测 443 **全部连通** → VPS 全球可达
+- 本机：TCP 22/443 双双超时，但 **ICMP ping 通**（179ms）→ GFW 针对 IP 的 TCP 级封锁（与 10-01 Fremont 那次同类，本次更彻底连 22 也断）
+- 对照组：apple/github 直连、机场节点端口（mid1.myzxdy.top:40200-40202）、apple 经 7890 走机场全部正常 → 本机网络/Clash/机场无关
+
+**尝试迁移换 IP**：面板选了 USCA_2（洛杉矶 DC2 AO，截图视觉确认单选框勾选后才确认），点 Start Migration 后报
+`Migration backend is currently not available for this VPS. Please try again in 10-15 minutes. (Reference code: 734152)`
+——迁移**未启动**，等 12 分钟重试仍同样报错（搬瓦工后端问题，非本 VPS 故障）。VM 数据与 IP 未受影响。
+
+**实际解法（当天恢复可用）**：mihomo 的 `dialer-proxy` 链式转发——给 VPS-ChatGPT 节点加一行 `"dialer-proxy": "BoostNet"`（机场主选择组），
+连接 VPS 的 TCP 先经机场当前选中节点出国、再从国外连 VPS。**ChatGPT 看到的出口仍是 VPS 固定 IP**（cdn-cgi/trace 实测 ip=104.129.181.52、colo=YVR），
+不破坏固定出口纪律。代价：多一跳延迟 + 依赖机场可用性。
+
+**验证**（2026-10-26 18:03）：7890 → chatgpt.com trace = 104.129.181.52；7899（proxy-fallback/Codex 路径）→ api.openai.com trace = 104.129.181.52；
+重启后日志 18:02:35 起 VPS 连接零报错。
+
+**恢复直连**：KiwiVM 迁移后端恢复后执行 Migrate to another DC 换新 IP → 跑 `backups/20261026-gfw-migration/update-ip.sh <新IP>` →
+删除 override 里 `"dialer-proxy": "BoostNet"` 一行 → 重启 Clash Party。
+
+**顺带确认的事实**：
+- VM 物理机房是 **CA Vancouver (CABC_1)**（面板 Physical Location + trace colo=YVR 双重印证；README 原记录"洛杉矶 USCA_2"已过时，IP 从未变过，疑为搬瓦工侧机房调整）
+- 本机 `~/.ssh/config` 原先是空的、`~/.ssh/vps_chatgpt` 密钥不存在（与文档声明不符）；实际可用密钥是 `~/.ssh/id_rsa`（known_hosts 有 10-01 部署当天的记录）。已补 vps-chatgpt 条目，迁移换 IP 后记得同步 HostName
+- 诊断技巧：`bash -c 'cat < /dev/null > /dev/tcp/<IP>/443'` 测 TCP、ping 对照 ICMP、check-host.net 外测——三步即可区分"本机问题/机场问题/IP 被墙/服务端宕机"
+
+---
+
 ## 2026-10-26：修复本机 ChatGPT 代理直连降级
 
 **定位**：系统代理已启用，但 TUN 关闭。ChatGPT/OpenAI 域名原本已走 VPS；桌面应用的 Google 辅助请求仍命中机场规则。Codex 使用的 `127.0.0.1:7899` 是 `%USERPROFILE%\.proxy-fallback\proxy-fallback.js`，原先会在 Mihomo 不可用时直连，在 CONNECT 上游连接失败后也会重试直连。

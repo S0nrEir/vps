@@ -20,7 +20,11 @@ function main(config) {
     "reality-opts": {
       "public-key": "A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20",
       "short-id": "4ea0c2144409a72b"
-    }
+    },
+    // 2026-10-26: VPS IP 被 GFW 封锁(TCP级, 22/443直连超时)。dialer-proxy 让连接 VPS
+    // 的流量先经 BoostNet(机场当前选中节点)出国, 再从国外连 VPS —— ChatGPT 看到的
+    // 出口仍是 VPS 固定 IP, 不破坏固定出口纪律。迁移换新 IP 后恢复直连: 删除下行即可。
+    "dialer-proxy": "BoostNet"
   });
 
   // 2) 公司内网域名直连：订阅最后的 MATCH,BoostNet 兜底会把 *.cyou-inc.com 送去代理节点，

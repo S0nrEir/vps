@@ -7,6 +7,7 @@ mixed-port: 7890
 allow-lan: false
 mode: rule
 log-level: warning
+find-process-mode: always
 
 dns:
   enable: true
@@ -31,8 +32,22 @@ proxies:
       short-id: "4ea0c2144409a72b"
 
 rules:
+  # ---- 公司域名、局域网和本机回环优先直连 ----
+  - DOMAIN-SUFFIX,cyou-inc.com,DIRECT
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+  - IP-CIDR6,::1/128,DIRECT,no-resolve
+  - PROCESS-NAME,ChatGPT.exe,VPS-ChatGPT
+  - PROCESS-NAME,Codex.exe,VPS-ChatGPT
+  - PROCESS-NAME,codex.exe,VPS-ChatGPT
   # ---- ChatGPT / OpenAI 全家桶 → VPS ----
   - DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,chatgpt.site,VPS-ChatGPT
+  - DOMAIN-SUFFIX,chatgpt-team.site,VPS-ChatGPT
   - DOMAIN-SUFFIX,openai.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,oaistatic.com,VPS-ChatGPT
   - DOMAIN-SUFFIX,oaistatsig.com,VPS-ChatGPT

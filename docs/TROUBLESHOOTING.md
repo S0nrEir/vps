@@ -1,5 +1,32 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-10-26：修复本机 ChatGPT 代理直连降级
+
+**定位**：系统代理已启用，但 TUN 关闭。ChatGPT/OpenAI 域名原本已走 VPS；桌面应用的 Google 辅助请求仍命中机场规则。Codex 使用的 `127.0.0.1:7899` 是 `%USERPROFILE%\.proxy-fallback\proxy-fallback.js`，原先会在 Mihomo 不可用时直连，在 CONNECT 上游连接失败后也会重试直连。
+
+**修改**：
+
+- `client/clash-party-override.js` 和独立 YAML 增加 `ChatGPT.exe`、`Codex.exe`、`codex.exe` 进程优先规则及 `find-process-mode: always`，补充 `chatgpt.site`、`chatgpt-team.site`。
+- 按用户随后补充的要求，公司域名 `*.cyou-inc.com`、RFC1918 私网、IPv6 ULA/link-local 和本机回环规则优先于进程规则；ChatGPT 内置浏览器访问公司内网直连，其余命中进程规则的请求仍走 VPS。IP 规则使用 `no-resolve`，不主动解析公网域名来匹配私网规则。
+- `client/proxy-fallback.js` 保存当前转发器源码：保护域名的 HTTP/CONNECT 请求在上游不可用时返回 502，禁止上游连接失败后重试直连；其他域名保留原有行为。
+- 已同步至 `E:\clash party\data\override\vpschatgpt01.js`、工作配置及本机转发器，热加载 Mihomo 并重启了转发器。持久设置 `data\mihomo.yaml` 同步为 `find-process-mode: always`。
+
+**验证**：`node client/test-routing.cjs` 检查进程规则优先级、保护域名一致性、HTTP/CONNECT 上游不可用与健康检查后的断线竞争。另以真实本地 HTTP 服务、关闭的测试上游端口验证 HTTP/CONNECT 均返回 502，直接拨号次数为 0。运行中可看到 ChatGPT 的 Sentry 请求命中 `ProcessName(ChatGPT.exe)`，链路为 `VPS-ChatGPT`。
+
+2026-10-26 11:05（北京时间）复测：经 7890 请求 `chatgpt.com/cdn-cgi/trace`、经 7899 请求 `api.openai.com/cdn-cgi/trace` 均返回 `ip=104.129.181.52`；普通 Cloudflare 请求仍走原有机场，出口 `64.118.152.45`。连接快照中 15 条 OpenAI 相关连接全部走 VPS，ChatGPT/Codex 的 18 条已建立 TCP 连接均为 loopback，Google 辅助连接已命中进程规则。这是当时的抽样，不能证明过去没有直连，也不能代表全部 UDP 行为。
+
+内网优先级调整后再次验证：11:10:58 日志明确记录 `ChatGPT.exe --> mail.cyou-inc.com:443 match DomainSuffix(cyou-inc.com) using DIRECT`；内置浏览器标签页标题为 `Outlook Web App`，URL 已进入 `/owa/auth/logon.aspx`。浏览器工具读取页面内容超时，未登录邮箱；独立 HTTP 测试确认服务可达。ChatGPT/API 出口复测仍为 `104.129.181.52`。内网优先级调整前的配置另存于 `backups/20261026-intranet-priority/*.bak`。
+
+**故障行为澄清**：Clash Party 是本机代理客户端，VPS 是它使用的出站节点；当前路径是“GPT → Clash Party → VPS”。没有配置 VPS 不可用时自动切换机场节点的 fallback 组。VPS 不可用时该路线失败；Clash 本机端口不可用时，7899 转发器对保护域名返回失败，不尝试本机直连。
+
+**边界**：用户明确选择暂不启用 Windows 防火墙；三个防火墙配置和 TUN 均保持关闭。代理层修复不等于系统级禁止直连，主动绕过代理的 TCP/UDP/IPv6 连接仍无强制拦截。7899 转发后 Mihomo 看到的是 Node 进程，故该路径依靠域名规则，无法保证未知第三方域名跟随 Codex 身份走 VPS。代理主程序必须保持规则模式，保护节点仍为单个 `VPS-ChatGPT` 节点。没有测试语音/视频的完整 UDP 链路。
+
+**恢复**：本次修改前的本机文件保存在 `E:\vps\backups\20261026-chatgpt-routing\*.bak`。恢复覆写和 mihomo 设置后重启 Clash Party，恢复转发器文件后只重启对应 Node 进程即可；恢复旧转发器会重新引入自动直连。
+
+规则语义参考：[Mihomo 路由规则](https://wiki.metacubex.one/en/config/rules/)。
+
+---
+
 本文档记录该项目部署当天实际遇到的所有问题、诊断过程与解法，供未来排障复用。
 按"现象 → 定位 → 解法"组织，含可复用的诊断技巧。
 

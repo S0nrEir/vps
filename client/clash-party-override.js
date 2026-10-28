@@ -4,6 +4,12 @@ function main(config) {
   // 先放行公司内网，再识别桌面进程，覆盖第三方资源和公网 IP 请求。
   config["find-process-mode"] = "always";
   // 1) 注入自建 VPS 节点
+  // dialer-proxy 动态解析: 优先 BoostNet 组 → 第一个 select 组(通常是"节点选择") → 不设置(直连)
+  const groups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
+  const dialerProxy =
+    groups.find((g) => g && g.name === "BoostNet")?.name ||
+    groups.find((g) => g && g.type === "select")?.name ||
+    "";
   config.proxies = config.proxies || [];
   config.proxies.push({
     name: "VPS-ChatGPT",
@@ -22,9 +28,11 @@ function main(config) {
       "short-id": "4ea0c2144409a72b"
     },
     // 2026-10-26: VPS IP 被 GFW 封锁(TCP级, 22/443直连超时)。dialer-proxy 让连接 VPS
-    // 的流量先经 BoostNet(机场当前选中节点)出国, 再从国外连 VPS —— ChatGPT 看到的
-    // 出口仍是 VPS 固定 IP, 不破坏固定出口纪律。迁移换新 IP 后恢复直连: 删除下行即可。
-    "dialer-proxy": "BoostNet"
+    // 的流量先经机场当前选中节点出国, 再从国外连 VPS —— ChatGPT 看到的
+    // 出口仍是 VPS 固定 IP, 不破坏固定出口纪律。迁移换新 IP 后恢复直连: 删除 dialer-proxy 即可。
+    // 2026-10-28: 不再硬编码 "BoostNet" —— 只有 BoostNet 订阅有该组, 换任何机场订阅都会报
+    // "dialer-proxy [BoostNet] not found" 导致导入/切换失败。改为动态解析, 见下方 dialerProxy 变量。
+    ...(dialerProxy ? { "dialer-proxy": dialerProxy } : {})
   });
 
   // 2) 公司内网域名直连：订阅最后的 MATCH,BoostNet 兜底会把 *.cyou-inc.com 送去代理节点，

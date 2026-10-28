@@ -1,5 +1,41 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-10-28（深夜）：ChatGPT 又断 —— 跳板与主选择组耦合埋雷，VPS-Hop 专用组解耦
+
+**现象**：VPN 完全正常（google 204、机场出口正常），但 chatgpt.com/auth.openai.com/api.openai.com
+全部 TLS 握手挂死（7890 CONNECT 200 建立后 schannel "failed to receive handshake"）。企业 DNS 对
+chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，但与本案无关（走代理由远端解析）。
+
+**定位**：
+- check-host.net 5 国节点测 VPS 443 全通（94-212ms）→ 服务端无恙
+- Clash Party 内核经命名管道 API 测 `VPS-ChatGPT` 端到端 delay = **503**
+- 逐跳板扫描（切 节点选择→测 VPS，15 个）：美国圣何塞/洛杉矶全系、美国01|下载、日本东京06、♻️自动选择
+  → 503；**AWS日本01、美国01-0.1倍、新加坡hy2、台湾、日本节点组(199ms)、狮城组(244ms) → 200**
+- 根因：override 动态解析把 dialer-proxy 挂在主选择组 `🚀节点选择`，主选"美国01|下载(0.01x)"恰好到不了
+  VPS；订阅 autoUpdate 刷新还会自动重置选择 → 埋雷，用户/刷新切到坏节点 ChatGPT 就断且 VPN 看似正常
+- 台湾节点"避免晚高峰使用"是真的：晚高峰实测 200→503 反复横跳
+
+**修复**：override v3（`client/clash-party-override.js` + `E:\clash party\data\override\vpschatgpt01.js` 同步）
+注入专用 **`VPS-Hop` select 组**：成员按正则从当前订阅过滤（AWS日本01 优先=默认、美国01-0.1倍、新加坡hy2、
+台湾×3、日本节点/狮城节点组，兜底主选择组→DIRECT），`VPS-ChatGPT` 的 dialer-proxy 固定指 VPS-Hop，
+主选择组与 ChatGPT 链路彻底解耦。
+- 离线验证：node vm 以真实订阅执行覆写 + 真实内核 `mihomo -t` → test is successful
+- 生效：taskkill mihomo.exe（GUI 2 秒自动拉起，管道名不变）
+- 回归：主选切回肇事节点后 trace 仍 `ip=104.129.181.52 colo=YVR`（delay 212ms）；普通流量出口 NRT 机场 IP
+
+**运维**：
+- ChatGPT 断链先跑：`MI_PIPE=<当前管道> node .diag-mihomo.cjs node VPS-ChatGPT`（503=跳板问题），
+  换跳板：`node .diag-mihomo.cjs switch <节点名> VPS-Hop`
+- 当前管道名：`wmic process where "name='mihomo.exe'" get CommandLine` 的 `-ext-ctl-pipe` 值
+  （含 GUI PID，重启 GUI 才变，重启内核不变）
+- `.diag-mihomo.cjs` 本轮升级：`MI_PIPE` 环境变量传管道、新增 `now`/`raw`/`vspscan` 命令、`switch` 支持组名
+
+**教训**：
+- "VPN 没断但 ChatGPT 断" = 优先怀疑 ChatGPT 专用链路（跳板→VPS），别动主代理
+- 机场节点到自建 VPS 的可达性**不均匀且随时会变**；dialer-proxy 引用的组绝不能是用户会随手切的主选组
+
+---
+
 ## 2026-10-28（晚，续）：BoostNet「链式代理」界面调研 + HK1 跳板瞬时劣化
 
 **背景**：用户打开 BoostNet 客户端自带的「链式代理」配置界面（名称/协议类型 SOCKS5/服务器地址/端口/认证），

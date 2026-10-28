@@ -53,9 +53,9 @@ vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&
 
 ### 场景 A：新电脑用 Clash Party / Mihomo Party（推荐，完整步骤）
 
-> 前提：机场订阅与这台机器相同（主选择组名 `BoostNet`）。若换别的机场，先在
-> Clash Party 里看订阅的代理组名，把 `client/clash-party-override.js` 里
-> `"dialer-proxy": "BoostNet"` 的 `BoostNet` 改成那个组名。
+> VPS-Hop 成员由正则从当前订阅自动过滤（AWS日本01/美国01-0.1倍/新加坡hy2/台湾/日本节点组/狮城组），
+> 匹配不到时兜底第一个 select 组——换机场一般无需改脚本；若新机场节点命名风格完全不同，
+> 改 `client/clash-party-override.js` 里的 `hopPrefs` 正则即可。
 
 1. 安装 [Clash Party](https://github.com/mihomo-party-org/clash-party/releases)
 2. 添加你的机场订阅（照常），确认代理页能选中节点、外网能通
@@ -74,10 +74,12 @@ vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&
   的**所有**请求走 VPS（兜住第三方资源）；再加一排 OpenAI 系域名规则兜住非桌面端流量
 - 公司内网（`*.cyou-inc.com`、RFC1918 私网、本机回环）规则排在最前 → ChatGPT 内置
   浏览器访问公司内网直连，不会被送出国
-- **`"dialer-proxy": "BoostNet"`（2026-10-26 加入）**：去 VPS 的 TCP 先经机场当前选中
-  节点出国、再从国外连 VPS。原因：VPS IP 被 GFW 封锁（TCP 级），直连必超时；而 VPS
-  本身全球可达。**ChatGPT 看到的出口仍是 VPS 固定 IP**，防风控纪律不破坏。
-  KiwiVM 迁移换新 IP 后想恢复直连：删掉这一行重启即可
+- **`"dialer-proxy": "VPS-Hop"`（2026-10-26 链式加入，10-28 晚改为专用组）**：VPS IP 被 GFW 封锁
+  （TCP 级），去 VPS 的 TCP 先经机场节点出国、再从国外连 VPS，**ChatGPT 看到的出口仍是 VPS 固定 IP**。
+  `VPS-Hop` 是覆写注入的专用 select 组，成员=实测可达 VPS 的节点（机场节点到 VPS 可达性不均匀），
+  与主选择组解耦——主选节点随便切不影响 ChatGPT 链路。ChatGPT 断链换跳板：
+  `MI_PIPE=<当前管道> node .diag-mihomo.cjs switch <节点名> VPS-Hop`。KiwiVM 迁移换新 IP 后
+  恢复直连：删掉 dialer-proxy 一行重启即可
 
 **被墙期间各配置的可用性**：
 

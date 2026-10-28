@@ -34,3 +34,8 @@ SSH 密码登录 : 已禁用（仅密钥），防火墙只开 22/443
    → 应急解法（已启用）：override 里给 VPS-ChatGPT 加 "dialer-proxy": "BoostNet"，流量经机场出国再连 VPS，
      ChatGPT 出口仍是本 VPS 固定 IP；迁移换新 IP 后删除该行并重启 Clash Party 即恢复直连
    → 根治解法：KiwiVM → Migrate to another DC（免费换 IP；当天后端报 734152 错误需择期重试）
+
+4. "VPN 正常但 ChatGPT TLS 握手挂死"（2026-10-28）= dialer-proxy 跳板到不了 VPS。
+   机场节点到 VPS 可达性不均匀（美国圣何塞/洛杉矶全系、部分日本节点不通；AWS日本01/美国01-0.1倍/
+   新加坡hy2/台湾/日本节点组/狮城组 通）。已改专用 VPS-Hop 组与主选择组解耦（见 TROUBLESHOOTING 当日条目）。
+   换跳板：MI_PIPE=<当前管道> node .diag-mihomo.cjs switch <节点名> VPS-Hop

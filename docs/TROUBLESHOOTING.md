@@ -1,5 +1,41 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-10-28（晚，续）：BoostNet「链式代理」界面调研 + HK1 跳板瞬时劣化
+
+**背景**：用户打开 BoostNet 客户端自带的「链式代理」配置界面（名称/协议类型 SOCKS5/服务器地址/端口/认证），
+问能否用它实现"ChatGPT 走 VPS、其余照旧分流"。同时实测发现 ChatGPT→VPS 链路断了（7890 CONNECT 能建但
+数据阶段挂死，cloudflare 出口 103.91.179.101 正常 = 交还客户端分流没坏）。
+
+**BoostNet「链式代理」真实语义**（逆向 `F:\BoostNet\BoostNet\data\app.so` Dart AOT 快照 + UTF-16 字符串挖掘）：
+- BoostNet 是 **FlClash 的闭源换皮 fork**（快照内大量 `package:fl_clash/...` 路径），上游 FlClash main 分支无此功能，系 fork 自加
+- 内部名 `landingProxy`（落地代理），功能描述原文：**「启用后流量链路：您的设备 → 订阅节点 → 链式代理 → 目标网站」
+  「同一时间只能启用一个链式代理」**，名称提示「例如: 美国落地、日本落地」——即**全局落地代理**，机场节点先把流量带出国、
+  再从国外连你填的 SOCKS5 落地、由落地 IP 出口
+- 实现方式为向 mihomo 配置注入（快照内有 `_injectLandingProxy`、`landing proxy inject error:`、`dialer-proxy` 字符串）
+
+**结论：该界面不适用于本需求，保持「暂无链式代理配置」**：
+1. 它是全局开关——启用后**所有**走代理的流量出口都变成落地 IP，无法只针对 ChatGPT 域名，破坏"其余该走 VPN 的走 VPN（机场出口）"
+2. 表单只收 SOCKS5（简单代理），VPS 上只有 vless+reality:443 入站，填了也连不上；要用需先在 VPS 加带认证的 SOCKS5 入站
+3. 全部翻墙流量共享 VPS 出口：带宽、单点故障、固定出口纪律（全部流量 104.129.181.52 出去）全部劣化
+
+**ChatGPT 链路中断的根因与修复**：VPS-Hop 当时选的香港HK1 瞬时劣化（41 节点实测里它本来就是"通"的边缘）。
+经 API 逐跳板测 `VPS-ChatGPT` 端到端 delay：HK1 2421ms / HK2 2628 / HK3 3868 / TW1 5634 / SG1 2728 / **US1 1985（最优）**，
+`PUT /proxies/VPS-Hop {"name":"Hop-美国US1"}` 切换后全链路恢复。
+
+**验证**（2026-10-28 晚，全过）：
+| 路径 | 出口 | 结论 |
+|---|---|---|
+| 7890 → chatgpt.com/cdn-cgi/trace ×2 | `104.129.181.52` colo=YVR | ChatGPT 经跳板 → VPS ✅ |
+| 7890 → cloudflare.com/trace | `103.91.179.101` colo=LAX | 其余交还 BoostNet 分流 ✅ |
+| 7899 → api.openai.com/cdn-cgi/trace | `104.129.181.52` colo=YVR | Codex proxy-fallback ✅ |
+
+**教训**：
+- "CONNECT 建立成功但数据挂死"= 跳板到 VPS 的 Reality 握手被掐（与 41 节点实测中 JP 系症状一致），先换跳板再查别的
+- 挖 Flutter AOT（app.so）字符串：中文是 **UTF-16LE** 存储，grep UTF-8 永远搜不到；拉丁标识符才是单字节
+- BoostNet 客户端零配置可改（配置全加密 enc1:），它自带的链式代理/落地功能是全局的，做不了按域名分流——按域名分流只能靠外置 mihomo
+
+---
+
 ## 2026-10-28（晚）：弃用 Clash Party 改用 BoostNet 客户端 → 本地 mihomo 链式路由器
 
 **背景**：本机从 Clash Party 切到 BoostNet 官方客户端（`F:\BoostNet`，Flutter+闭源核心，服务进程

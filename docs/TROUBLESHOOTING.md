@@ -320,6 +320,7 @@ curl -sv --resolve www.microsoft.com:443:<IP> https://www.microsoft.com
 | WebFetch/数据中心 IP 被目标站屏蔽 | 本地 `curl -x http://127.0.0.1:7890`（走用户自己的代理） |
 | Windows curl 走不了系统代理 | 显式 `-x` 指定，socks 用 `--socks5-hostname`（远程解析域名） |
 | ssh-copy-id 之后的首次 ssh 报 Host key verification | 首次加 `-o StrictHostKeyChecking=accept-new` |
+| GitHub SSH 22 被 GFW reset（push/pull 全挂，Connection reset by 20.205.243.166） | `~/.ssh/config` 的 `Host github.com` 块：HostName 改 `ssh.github.com` + 加 `Port 443`，密钥不变，2026-10-28 实测 |
 
 ---
 

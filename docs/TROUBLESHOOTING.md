@@ -1,5 +1,81 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-10-28（晚）：弃用 Clash Party 改用 BoostNet 客户端 → 本地 mihomo 链式路由器
+
+**背景**：本机从 Clash Party 切到 BoostNet 官方客户端（`F:\BoostNet`，Flutter+闭源核心，服务进程
+`com.vortex.helper.exe` 监听 7897，配置文件在 `%APPDATA%\BoostNet` 全部加密 `enc1:`），无法像 Clash Party
+那样注入覆写。同时系统代理已关、7899 回落转发器指向已死的 7890——Codex/API 链路整个断了。
+
+**方案**：在 BoostNet 客户端前面垫一层本地 mihomo「链式路由器」（`client/boostnet-chain/`，mixed-port 7890）：
+- `VPS-ChatGPT`（vless+reality，与覆写版同节点）`dialer-proxy: VPS-Hop` —— VPS-Hop 是**自己内置的 BoostNet
+  跳板节点组**（anytls 直连 `mid1.myzxdy.top`），不随客户端选点漂移
+- ChatGPT/OpenAI 域名 + ChatGPT.exe/Codex.exe 进程 → VPS-ChatGPT；公司内网/私网 → DIRECT
+- `MATCH → BoostNet`（http://127.0.0.1:7897）——其余流量原样交还客户端，由它按自身规则分直连/VPN
+- 系统代理开回 127.0.0.1:7890，7899 回落随之恢复；HKCU Run 键 + `start-hidden.vbs` 开机自启
+
+**关键发现（41 节点全量实测，端到端 Reality 握手 + trace 验证）**：BoostNet 各节点到 VPS 443 连通性**不均匀**——
+香港HK1-4/6-12、台湾TW1-4、新加坡SG1-8、美国US1-4、英国/马来/阿根廷/澳洲 全通；**日本JP1/3/4/7/8、香港HK5、
+土耳其TR 到 VPS 不通**（CONNECT 挂死；JP1 到 22 端口 TCP 通但 SSH kex 阶段被掐）。VPS 本身全球可达
+（check-host.net 瑞/意/波/土/乌 5/5 OK）。**当时客户端选的正是日本JP1**——这就是"链路时好时坏"的根因。
+
+**验证**（2026-10-28 16:0x，全过）：
+| 路径 | 出口 | 结论 |
+|---|---|---|
+| 7890 → chatgpt.com/cdn-cgi/trace | `104.129.181.52` colo=YVR | ChatGPT 经 BoostNet HK1 跳板 → VPS ✅ |
+| 7890 → cloudflare/trace | `103.91.179.101` colo=LAX | 其余流量交还 BoostNet 客户端分流 ✅ |
+| 7899 → api.openai.com/cdn-cgi/trace | `104.129.181.52` | Codex proxy-fallback 链路恢复 ✅ |
+
+**运维**：
+- 手动启动：`wscript E:\vps\client\boostnet-chain\start-hidden.vbs`（Run 键已注册自启）
+- 切换跳板：`PUT http://127.0.0.1:9090/proxies/VPS-Hop {"name":"Hop-新加坡SG1"}`（坏节点可换）
+- 诊断面板：`127.0.0.1:9090`（external-controller）
+- 回退到 Clash Party：删 Run 键 `BoostNetChainRouter`、结束 mihomo 进程、系统代理指回 Clash Party 7890
+
+**排障踩坑（本轮又验证/新踩的）**：
+- `curl --noproxy "*" -x ...` 会连 `-x` 一起屏蔽（本页 10-08 条已记过，本轮又踩：误判链路全断 20 分钟）
+- HTTP 代理下 `--resolve` 无效（DNS 由代理解析），测 Reality 端口必须让代理收到 IP 的 CONNECT
+- 裸 IP 无 SNI 探测 Reality 端口会误判"不通"；`curl telnet://` 的 exitcode 不能当连通性判据（无自然结束必超时）
+- mihomo file provider 的 YAML 必须有 `proxies:` 根键，裸列表报 `cannot unmarshal !!seq into provider.ProxySchema`
+- provider 加载失败时 select 组会退化成 `COMPATIBLE` 空组，dialer-proxy 引用组名不报错但直接走直连（被墙→i/o timeout）
+- 穿 HTTP 代理 SSH：`ssh -o ProxyCommand="python client/boostnet-chain/httpproxy.py 127.0.0.1 7897 %h %p"`（本仓库留有此工具）
+
+---
+
+## 2026-10-28：新机场订阅导入 Clash Party 失败 —— 全局覆写硬编码 dialer-proxy
+
+**现象**：新机场订阅（`cat.cn-ping.com`，星辰系）导入 Clash Party 报错失败，无法添加。
+
+**定位**（排除法分层，每层有实测证据）：
+- 订阅本身正常：HTTP 200、56KB Clash YAML、46 个节点、余量 17.15 GB。该机场后端**按 User-Agent 分发格式**：
+  UA 含 `clash`（不分大小写）→ Clash YAML；`mihomo`/`sing-box`/`v2rayN` → base64 裸节点列表。Clash Party 2.0.1
+  拉订阅的默认 UA 是 `mihomo.party/v<版本> (clash.meta)`（源码 `profile.ts`），含 `clash.meta` → 实测返回 YAML，兼容没问题
+- 网络正常：直连（`--noproxy`）0.98s 拿到完整配置，走代理同样通 → 排除墙/CDN/系统代理因素
+- 真凶在 GUI 日志 `data/logs/clash-party-2026-10-28.log` 14:53：
+  `proxy [VPS-ChatGPT] dialer-proxy [BoostNet] not found` → `configuration file ...Temp\mihomo-party-profile-xxx\config.yaml test failed`
+- **根因**：全局覆写 `vpschatgpt01.js` 给 VPS-ChatGPT 节点硬编码 `"dialer-proxy": "BoostNet"`（10-26 引入），
+  而 `BoostNet` 组只存在于 BoostNet 机场配置。导入新订阅时 Clash Party 先套全局覆写再跑 mihomo 配置校验，
+  新机场主组叫 `节点选择` → dialer-proxy 指向不存在的组 → 校验失败 → 导入被拒。任何"换机场"都会踩
+- 本地复现：取订阅 YAML + 注入旧覆写的节点定义，`mihomo -t` 报一字不差的同样错误
+
+**解法**：dialer-proxy 改为动态解析——优先找 `BoostNet` 组 → 否则用订阅第一个 `select` 型组（通常是"节点选择"）
+→ 都没有就不设 dialer-proxy（VPS 直连）。改动两处同步：`E:\clash party\data\override\vpschatgpt01.js`（生效文件）
+和仓库 `client/clash-party-override.js`（母本，防下次同步带回 bug）。
+
+**验证**（用真实核心 `E:\clash party\resources\sidecar\mihomo.exe -t`，`-d` 必须指向 `data/work` 否则缺 GeoIP 报无关错误）：
+- 旧脚本 + 新机场订阅 → `dialer-proxy [BoostNet] not found`，失败（复现）
+- 新脚本 + 新机场订阅 → dialer-proxy=`节点选择`，test is successful
+- 新脚本 + BoostNet 订阅 → dialer-proxy=`BoostNet`，行为不变，test is successful
+- 覆写脚本每次导入/生成配置时从磁盘实时读取（源码 `applyOverrides → getOverride → readFile`），改完即生效无需重启
+
+**教训**：
+- 全局覆写里任何对订阅内容的引用（组名/节点名）都会把"换机场订阅"变成炸点；引用必须动态解析 + 兜底，不能硬编码
+- Clash Party 导入订阅失败时，先看 `data/logs/clash-party-<日期>.log` 里的 `test failed` 上一行——那是 mihomo 校验的真实报错，
+  比界面弹窗信息量大得多
+- 机场订阅 UA 分发机制：测订阅问题要带着客户端真实 UA 测（`curl -A "mihomo.party/v2.0.0 (clash.meta)"`），
+  默认 curl UA 拿到 base64 列表会误导排查方向
+
+---
+
 ## 2026-10-26（下午）：IP 第二次被 GFW 封锁 → dialer-proxy 经机场链式绕行
 
 **现象**：当天 10:13 起 ChatGPT 走 VPS 开始间歇性失败（上午刚做完路由修复、11:05 验证通过），16:38 后完全中断，全天 mihomo 日志 3473 次 `dial tcp 104.129.181.52:443: i/o timeout`。
@@ -22,7 +98,8 @@
 重启后日志 18:02:35 起 VPS 连接零报错。
 
 **恢复直连**：KiwiVM 迁移后端恢复后执行 Migrate to another DC 换新 IP → 跑 `backups/20261026-gfw-migration/update-ip.sh <新IP>` →
-删除 override 里 `"dialer-proxy": "BoostNet"` 一行 → 重启 Clash Party。
+删除 override 里的 dialer-proxy（2026-10-28 起为动态解析：删掉 `dialerProxy` 解析块和
+`...(dialerProxy ? ...)` 一行即可）→ 重启 Clash Party。
 
 **顺带确认的事实**：
 - VM 物理机房是 **CA Vancouver (CABC_1)**（面板 Physical Location + trace colo=YVR 双重印证；README 原记录"洛杉矶 USCA_2"已过时，IP 从未变过，疑为搬瓦工侧机房调整）

@@ -9,3 +9,5 @@ client/xray/
 *.zip
 *.bak
 __pycache__/
+client/boostnet-chain/bin/
+client/boostnet-chain/cache.db

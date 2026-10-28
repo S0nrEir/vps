@@ -1,0 +1,51 @@
+# VPS 跳板候选节点（来自 BoostNet 订阅，2026-10-28 实测可连 VPS 443）
+# 顺序即 VPS-Hop 默认优先级；日本集群 JP1/3/4/7/8、香港HK5、土耳其TR 实测到 VPS 不通，勿加
+proxies:
+  - name: Hop-香港HK1
+    type: anytls
+    server: mid1.myzxdy.top
+    port: 40201
+    password: f0b6e4d9-99c5-4ecd-8c37-b38d8b750cec
+    udp: true
+    sni: gateway.icloud.com
+    skip-cert-verify: true
+  - name: Hop-香港HK2
+    type: anytls
+    server: mid1.myzxdy.top
+    port: 40202
+    password: f0b6e4d9-99c5-4ecd-8c37-b38d8b750cec
+    udp: true
+    sni: gateway.icloud.com
+    skip-cert-verify: true
+  - name: Hop-香港HK3
+    type: anytls
+    server: mid1.myzxdy.top
+    port: 40203
+    password: f0b6e4d9-99c5-4ecd-8c37-b38d8b750cec
+    udp: true
+    sni: gateway.icloud.com
+    skip-cert-verify: true
+  - name: Hop-台湾TW1
+    type: anytls
+    server: mid1.myzxdy.top
+    port: 40221
+    password: f0b6e4d9-99c5-4ecd-8c37-b38d8b750cec
+    udp: true
+    sni: gateway.icloud.com
+    skip-cert-verify: true
+  - name: Hop-新加坡SG1
+    type: anytls
+    server: mid1.myzxdy.top
+    port: 40211
+    password: f0b6e4d9-99c5-4ecd-8c37-b38d8b750cec
+    udp: true
+    sni: gateway.icloud.com
+    skip-cert-verify: true
+  - name: Hop-美国US1
+    type: anytls
+    server: mid2.myzxdy.top
+    port: 40241
+    password: f0b6e4d9-99c5-4ecd-8c37-b38d8b750cec
+    udp: true
+    sni: gateway.icloud.com
+    skip-cert-verify: true

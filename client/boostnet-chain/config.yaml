@@ -1,0 +1,94 @@
+# BoostNet 链式路由器：本地 mihomo 垫在 BoostNet 客户端(7897)之前
+# 效果与 Clash Party 覆写版一致：
+#   ChatGPT/OpenAI 流量 -> BoostNet 跳板节点(VPS-Hop, 自选不随客户端) -> VPS(104.129.181.52) -> ChatGPT 服务器
+#   其余流量 -> 原样转发给 BoostNet 客户端(7897)，由它按自己的规则走直连/VPN
+#   公司内网/私网 -> 直连
+# 依赖：
+#   - BoostNet 客户端保持运行（兜底出口 7897）
+#   - VPS-Hop 跳板是 BoostNet 订阅内实测能连到 VPS 443 的节点（2026-10-28 全量 41 节点实测，
+#     日本JP1/3/4/7/8、香港HK5、土耳其TR 到 VPS 不通，勿选）
+mixed-port: 7890
+bind-address: '127.0.0.1'
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+external-controller: '127.0.0.1:9090'
+find-process-mode: always
+
+proxies:
+  # 兜底出口：BoostNet 客户端的本地混合端口
+  - name: BoostNet
+    type: http
+    server: 127.0.0.1
+    port: 7897
+
+  # 自建 VPS 固定出口（与 Clash Party 覆写里同一个节点）
+  # VPS IP 被 GFW TCP 级封锁，dialer-proxy 让连接 VPS 的流量先经 BoostNet 跳板出国再连 VPS
+  - name: VPS-ChatGPT
+    type: vless
+    server: 104.129.181.52
+    port: 443
+    uuid: b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e
+    network: tcp
+    udp: true
+    tls: true
+    flow: xtls-rprx-vision
+    servername: www.lovelive-anime.jp
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20
+      short-id: 4ea0c2144409a72b
+    dialer-proxy: VPS-Hop
+
+# VPS 跳板组：节点来自 hop-nodes.yaml 文件 provider（默认第一个 = 香港HK1），
+# 坏时可经 API(127.0.0.1:9090/proxies/VPS-Hop) 或面板切换
+proxy-groups:
+  - name: VPS-Hop
+    type: select
+    use:
+      - boostnet-hops
+
+proxy-providers:
+  boostnet-hops:
+    type: file
+    path: ./hop-nodes.yaml
+    health-check:
+      enable: true
+      url: 'http://www.gstatic.com/generate_204'
+      interval: 600
+
+rules:
+  # ---- 公司域名、局域网和本机回环优先直连 ----
+  - DOMAIN-SUFFIX,cyou-inc.com,DIRECT
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+  - IP-CIDR6,::1/128,DIRECT,no-resolve
+
+  # ---- 桌面进程整体走 VPS（覆盖第三方资源/公网 IP 请求）----
+  - PROCESS-NAME,ChatGPT.exe,VPS-ChatGPT
+  - PROCESS-NAME,Codex.exe,VPS-ChatGPT
+  - PROCESS-NAME,codex.exe,VPS-ChatGPT
+
+  # ---- ChatGPT / OpenAI 域名走 VPS ----
+  - DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,chatgpt.site,VPS-ChatGPT
+  - DOMAIN-SUFFIX,chatgpt-team.site,VPS-ChatGPT
+  - DOMAIN-SUFFIX,openai.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,oaistatic.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,oaistatsig.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,oaiusercontent.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,sora.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,openaiapi-site.azureedge.net,VPS-ChatGPT
+  - DOMAIN-SUFFIX,auth0.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,livekit.cloud,VPS-ChatGPT
+  - DOMAIN-SUFFIX,challenges.cloudflare.com,VPS-ChatGPT
+  - DOMAIN-SUFFIX,featuregates.org,VPS-ChatGPT
+  - DOMAIN-SUFFIX,statsig.com,VPS-ChatGPT
+
+  # ---- 其余全部交还 BoostNet，由它按自身规则分直连/VPN ----
+  - MATCH,BoostNet

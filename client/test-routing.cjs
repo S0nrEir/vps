@@ -23,6 +23,18 @@ for (const rule of [
 }
 assert.ok(processIndex < config.rules.indexOf('DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT'));
 assert.equal(config.rules.at(-1), 'MATCH,DIRECT');
+assert.equal(config.proxies.find(x => x.name === 'VPS-ChatGPT')['dialer-proxy'], 'VPS-Hop');
+const listener = config.listeners.find(x => x.name === 'concept-generator-vps');
+assert.deepEqual(JSON.parse(JSON.stringify(listener)), {
+  name: 'concept-generator-vps', type: 'mixed', listen: '127.0.0.1', port: 17899,
+  proxy: 'VPS-ChatGPT', udp: false
+});
+const existingListeners = override.main({ listeners: [
+  { name: 'other', port: 18888 }, { name: 'concept-generator-vps', proxy: 'DIRECT' }
+] }).listeners;
+assert.equal(existingListeners.filter(x => x.name === 'concept-generator-vps').length, 1);
+assert.equal(existingListeners.find(x => x.name === 'concept-generator-vps').proxy, 'VPS-ChatGPT');
+assert.equal(existingListeners.find(x => x.name === 'other').port, 18888);
 
 const attempts = [];
 const server = new EventEmitter();

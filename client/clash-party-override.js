@@ -70,6 +70,13 @@ function main(config) {
     "dialer-proxy": "VPS-Hop",
   });
 
+  // concept-generator 的请求和附件固定走 VPS，避免域名分流遗漏或故障时直连。
+  config.listeners = (config.listeners || []).filter((listener) => listener.name !== "concept-generator-vps");
+  config.listeners.push({
+    name: "concept-generator-vps", type: "mixed", listen: "127.0.0.1", port: 17899,
+    proxy: "VPS-ChatGPT", udp: false
+  });
+
   // 3) 公司内网域名直连：订阅最后的 MATCH 兜底会把 *.cyou-inc.com 送去代理节点，
   //    节点在公网连不到 10.x 内网，mihomo 拨号失败后给浏览器回 502。放最前面优先直连。
   config.rules = config.rules || [];

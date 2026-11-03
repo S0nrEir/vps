@@ -116,6 +116,19 @@ vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&
    `curl -x http://127.0.0.1:7899 https://api.openai.com/cdn-cgi/trace | grep ^ip=`
    输出 `ip=104.129.181.52` 即成功（日志在同目录 `proxy-fallback.log`）
 
+### concept-generator 专用入口
+
+`client/clash-party-override.js` 同时提供仅监听 `127.0.0.1:17899` 的 mixed 入口 `concept-generator-vps`，固定 `proxy: VPS-ChatGPT`，复用 `VPS-Hop` 跳板。该入口不经过普通域名分流，因此 GPT 请求和 OpenAI/Azure 附件下载都使用 VPS 出口；节点失败时失败，不回退到机场出口或直连。
+
+`E:\project_A1\project_A1\work-flow\concept-generator` 的 Codex 子进程和附件 HTTPS Agent 使用此入口；本机 GUI 服务仍为 `127.0.0.1:18788`。工具要求 Node.js 24.5+。部署后验证：
+
+```powershell
+curl.exe --noproxy "" --proxy http://127.0.0.1:17899 https://chatgpt.com/cdn-cgi/trace
+node client/test-routing.cjs
+```
+
+出口应为 `104.129.181.52`。停用 17899 会让该工具的外部请求失败；原有 7890/7899 配置继续服务其他应用。
+
 ### 验证是否生效
 
 ```bash

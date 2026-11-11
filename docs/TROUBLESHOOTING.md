@@ -1,5 +1,66 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-11-11（上午）：VPS 因 Mass Mailing 被滥用暂停 —— at 队列恶意脚本，出站 25/465/587 全封
+
+**现象**：KiwiVM 面板弹出滥用暂停页（Abuse points **100/1300**，年内累计制，满 1300 永久封到年底），
+原因 `Network abuse: Mass Mailing`。连接日志：VPS（104.129.181.52）每隔 2~4 分钟对 Yahoo（98.136.96.74）
+和 Google（142.250.102.26）的 MX **25 端口**发起 SMTP 连接，HELO 伪装成 gamma.app / status.figma.com /
+martinfowler.com / ping.mcp.so / aif.runwayml.com 等正规域名，STARTTLS 后发空邮件失败。时间戳
+2026-11-10 08:21–08:40（北京时间）。手动重启解封了机器，但源头未除。
+
+**定位**（经 KiwiVM 网页 Root shell —— 本机 SSH 已进不去：sshd 只接受 publickey，
+本机 `id_rsa`/`remote` 两把钥匙均被拒 → **疑攻击者换掉了 `/root/.ssh/authorized_keys`**）：
+- root 无 crontab、`/etc/cron.d` 与 `systemctl list-timers` 全为系统默认、高 CPU 进程全是内核线程
+  → 恶意程序**非常驻、定时唤醒型**，普通排查全空
+- `/tmp/netstat_probe`（2026-11-11 08:11 服务器时间，3.5KB bash 脚本）：伪装成"网络诊断"，注释自述
+  "连接一组邮件中转的 25 端口并验证"，驻留方式是 **`at(1)` 队列**（atq 里有任务，排到次日 02:00）
+  → 这就是 cron/timer 都查不到的原因；入侵者拿到过 root
+
+**处理**（全部已执行并验证）：
+1. **核心防线——防火墙封死出站 SMTP**，且重启自动生效：
+   - 新建 `/etc/systemd/system/block-smtp-out.service`（oneshot + RemainAfterExit）并 `enable --now`
+   - 手动补了条 LOG 规则插在 OUTPUT 链第 1 位（前缀 `SMTPBLK`，当报警器用；注意它不在 unit 里，重启后只剩 REJECT）
+2. **清除本次驻留**：`atrm` 清空 at 队列 → `rm -f /tmp/netstat_probe` → `systemctl disable --now atd`
+3. **实测验证**：从 VPS 连 98.136.96.74:25 立即被 REJECT（rc=1）；`iptables -L OUTPUT -n` 可见
+   `LOG ... dports 25,465,587 prefix "SMTPBLK"` + `REJECT ... reject-with icmp-port-unreachable`；
+   `atq` 空输出；`ls /tmp/netstat_probe` → No such file or directory；`atd` inactive；
+   `block-smtp-out` enabled
+
+**遗留 / 待办**：
+- ⚠️ **根级入侵已成事实，清掉一个驻留点不等于干净**。建议尽快在 KiwiVM 里 snapshot 备份后一键重装。
+  重装后第一件事：(a) 把自己的公钥配回 `authorized_keys`（旧的别信）；(b) 重建下面的防火墙 unit
+- 报警器：`dmesg | grep SMTPBLK`，有输出 = 还有残留程序在尝试外发，更要尽快重装
+- abuse 分数不会因处理而清零（年内累计，现 100/1300）；25 端口已封死，该类举报不会再发生
+- 运维知识：SSH 坏掉时用面板左侧 **Root shell – basic**（网页 root 终端，无需密码）；
+  该会话**几分钟不动就超时重置**，命令要短、分批连发
+
+**复贴：block-smtp-out.service 全文**（重装后照抄重建，`systemctl daemon-reload && systemctl enable --now block-smtp-out`）：
+
+```ini
+[Unit]
+Description=Block outbound SMTP 25/465/587
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT
+ExecStart=/usr/sbin/ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT
+
+[Install]
+WantedBy=multi-user.target
+```
+
+可选：再加日志报警行（放在两条 REJECT 之前，重启后也保留）：
+`ExecStart=/usr/sbin/iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j LOG --log-prefix SMTPBLK`
+
+**教训**：
+- 重启只解封不除根；定时唤醒型恶意程序要查 **at 队列**（`atq`），光看 cron/systemd 会漏
+- 服务器只收 publickey + 本机钥匙全部被拒 = 第一反应应该是 authorized_keys 被换，而不是重置密码
+- 网页终端操作长命令会被丢字符，长内容拆成多条短命令逐行执行
+
+---
+
 ## 2026-10-28（深夜）：ChatGPT 又断 —— 跳板与主选择组耦合埋雷，VPS-Hop 专用组解耦
 
 **现象**：VPN 完全正常（google 204、机场出口正常），但 chatgpt.com/auth.openai.com/api.openai.com

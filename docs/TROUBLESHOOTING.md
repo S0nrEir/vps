@@ -1,5 +1,50 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-11-11（傍晚）：重装后服务端重建实录 —— 22 入站疑被 BWH 掐、443 跳板链 SSH、Reality 认证三连排查
+
+上一条遗留的待办「Xray 随重装消失」本轮完成。**结论先行**：服务端 + 客户端参数全部正确且已互验，
+ChatGPT 链路恢复只差「机场节点→VPS」对 Reality 握手干扰的窗口期结束（10-28 已知波动现象）。
+
+1. **SSH 通道重建（新发现：22 入站拿不到 banner，443 正常）**
+   - 网页 Root shell（basic 表单式）注入新公钥 `~/.ssh/vps_reinstall`(ed25519)：171 字符 echo
+     完整送达（表单提交不像交互终端丢字符），两端 md5sum 核对一致
+   - 机器内 sshd 监听 22 正常、iptables INPUT 空、无 ufw、出网正常——但经机场节点连 22 拿不到
+     SSH banner；443 上临时 `/usr/sbin/sshd -p 443` 立刻拿到 → 22 入站在 BWH 边缘被过滤
+     （滥用机器的处置？）。IP 被 GFW 封的国内直连两端口都不通，SSH 只能走：机场→VPS:443
+   - 标准命令（Git Bash 自带 connect.exe 走 mihomo 7890）：
+     `ssh -i ~/.ssh/vps_reinstall -p 443 -o ProxyCommand="/mingw64/bin/connect -H 127.0.0.1:7890 %h %p" root@104.129.181.52`
+     前提：出口组指向可达 VPS 的节点（**AWS日本01 可达；美国圣何塞01-0.1倍 不可达**——当天
+     出口恰好是圣何塞，白白排查一轮）
+2. **部署**：SSH 通后 `ssh ... 'bash -s' < 部署脚本` 一气呵成：装 Xray 26.11.9 → 写配置 →
+   sshd 禁密码 → 关 atd。凭据策略：**沿用旧 UUID/short-id + 服务端 `xray x25519` 原生新密钥对**
+   （客户端只需改 public-key 一处）。注意：下午会话已建更强防火墙 `smtp-block.service`（双向+2525），
+   本轮误建旧名 block-smtp-out 已删除去重。
+3. **连环坑 A**：官方安装器装完**立刻启动** xray（空配置），之后写入的配置不重启不生效——
+   `systemctl is-active xray` = active 但 443 无监听。**is-active ≠ 配置已加载，必须 ss -tln 验证**。
+4. **连环坑 B**：`pkill -f "sshd -p 443"` 把执行它的 bash 自己也杀了（cmdline 含同样字符串），
+   后续 systemctl 静默未跑。就是本文「小坑收集」第一条，拼命令时又踩一遍；用 `"44[3]"` 括号技巧。
+5. **Reality 认证三连排查**（自环终审法再立功）：
+   - ① mihomo 管道日志 `GET /logs?level=debug`：`REALITY Authentication: false`
+   - ② Node 经 mihomo CONNECT 隧道对 VPS:443 发 SNI=lovelive 的普通 TLS：**成功拿到
+     `CN=*.lovelive-anime.jp` 证书** → xray 活着、回源转发正常（Reality 对未认证连接的行为），
+     问题锁定在认证环节
+   - ③ 服务端自环（xray 客户端连 127.0.0.1:443 + curl socks5）→ **返回 104.129.181.52** →
+     两端参数 100% 正确；本地仍 auth failed = 机场节点→VPS 链路干扰（与 10-28 同现象）
+   - 附注：本地 Node crypto 生成的 X25519 密钥对（base64url 定长正确）也出现过认证异常，
+     **统一改用服务端 `xray x25519` 原生输出后两端即配对**。Xray 26.x 的 x25519 输出新增
+     `Password (PublicKey)`/`Hash32` 字段（新版密码认证模式），pbk 字段用 PublicKey 值不变。
+6. **mihomo 运维**：改 override 公钥后 `taskkill //IM mihomo.exe //F`，Clash Party 自动拉起
+   （管道名不变），`grep 新公钥 work/config.yaml` 验证重算完成。
+
+**重建后凭据**（node-info.txt 已全量更新）：UUID/short-id 沿用旧值；
+Public Key = `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE`；override 双副本已同步。
+
+**重装后必做清单**（下次照此执行）：装 xray → 写配置 → **重启并 ss -tln 验证监听** →
+确认 smtp-block enabled → 注入新公钥 + sshd 禁密码 → atd 禁用 → 客户端换 pbk → 重启 mihomo →
+自环测试终审。
+
+---
+
 ## 2026-11-11（下午）：二次滥用暂停 —— 攻击者清防火墙真发赌场邮件 → 整机重装 + 防火墙升级 + 面板改密
 
 **现象**：上午处理完 at 队列恶意脚本并封出站 25/465/587 后约 4 小时（abuse 日志时间戳 1794371028~1794372026

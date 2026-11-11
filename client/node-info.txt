@@ -1,26 +1,39 @@
-==================== VPS-ChatGPT 节点信息（2026-10-01 部署）====================
+==================== VPS-ChatGPT 节点信息（2026-11-11 重装后重建）====================
 
-服务器 IP : 104.129.181.52   （搬瓦工 CA Vancouver CABC_1，2026-10-26 面板确认；曾记录为洛杉矶 USCA_2）
+服务器 IP : 104.129.181.52   （搬瓦工 CA Vancouver CABC_1，KiwiVM 2212317 fancy-swan-1）
 ⚠️ 2026-10-26 该 IP 被 GFW 封锁（TCP级）。客户端已启用 dialer-proxy 经机场中转（见下），服务端零改动。
+⚠️ 2026-11-11 上午因滥用事件重装系统（Ubuntu 24.04），服务端全套重建，密钥对已更换（见下）。
+⚠️ 2026-11-11 实测：BWH 边缘掐 22 端口入站（机器内 sshd 正常、无防火墙，但机场节点到 22 拿不到
+   banner）；443 入站正常。SSH 需走 443 跳板链（见下）。
 端口      : 443
-协议      : VLESS + Reality (Xray)
-UUID      : b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e
-Public Key: A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20
-Short ID  : 4ea0c2144409a72b
+协议      : VLESS + Reality (Xray 26.11.9)
+UUID      : b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e   （沿用旧值）
+Public Key: IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE   （2026-11-11 服务端 xray x25519 原生生成）
+Short ID  : 4ea0c2144409a72b   （沿用旧值）
 SNI/伪装  : www.lovelive-anime.jp   ⚠️ 不要用 www.microsoft.com（其抗量子TLS会导致握手失败）
 Flow      : xtls-rprx-vision
 指纹      : chrome
 
+密钥变更史：2026-10-01 部署密钥对（私钥仅存服务端）→ 2026-11-11 重装丢失 → 服务端
+`xray x25519` 原生重生成。旧公钥 A3LmS90c... 已作废。客户端 override 已同步新公钥。
+（教训：本地 Node crypto 生成的 X25519 对自环能过 TLS 转发，但 mihomo 客户端认证异常，
+统一用服务端 xray 原生输出最稳。）
+
 ---------- 一键导入链接（v2rayN / Shadowrocket / v2rayNG 剪贴板导入）----------
 
-vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
+vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
 
 ---------- 服务器管理 ----------
 
-SSH 免密登录 : ssh vps-chatgpt     （密钥实际为 ~/.ssh/id_rsa，2026-10-26 补建了 ~/.ssh/config 条目）
-               ⚠️ IP 被墙期间 SSH 22 同样不通；需登录服务器时可用 KiwiVM 面板的 Root shell，或走代理跳板
-面板         : https://kiwivm.64clouds.com  （搬瓦工 KiwiVM，可免费换机房/重装）
-SSH 密码登录 : 已禁用（仅密钥），防火墙只开 22/443
+SSH 跳板链（2026-11-11 起的标准通道；直连 22/443 均被墙+22 被 BWH 掐，必须经机场）:
+  ssh -i ~/.ssh/vps_reinstall -p 443 \
+    -o ProxyCommand="/mingw64/bin/connect -H 127.0.0.1:7890 %h %p" \
+    root@104.129.181.52
+  前提：mihomo 运行中(7890 混合端口)，且 VPS 出口组指向可达 VPS 的机场节点
+ （AWS日本01 实测可达；圣何塞系不可达）。若 443 被 xray 占用无法 SSH 时，
+  可在 KiwiVM 网页 Root shell 临时 `/usr/sbin/sshd -p 443`（注意先 systemctl stop xray）。
+密钥      : ~/.ssh/vps_reinstall (ed25519, 2026-11-11)，密码登录已禁用
+面板      : https://kiwivm.64clouds.com  （搬瓦工 KiwiVM；SSH 全断时用 Root shell – basic）
 
 ---------- 踩坑记录（排查重复问题先看这里）----------
 
@@ -31,11 +44,14 @@ SSH 密码登录 : 已禁用（仅密钥），防火墙只开 22/443
    → 解法：换普通 X25519 的伪装站（当前 www.lovelive-anime.jp，备选 www.samsung.com、www.nvidia.com）
    → 排查命令：F:\vps\deploy\desttest.sh 会自动逐个候选测试
 3. IP 被 GFW 封锁（TCP级：22/443 全超时但 ping 通，国外全可达）——2026-10-26 第二次
-   → 应急解法（已启用）：override 里给 VPS-ChatGPT 加 "dialer-proxy": "BoostNet"，流量经机场出国再连 VPS，
-     ChatGPT 出口仍是本 VPS 固定 IP；迁移换新 IP 后删除该行并重启 Clash Party 即恢复直连
-   → 根治解法：KiwiVM → Migrate to another DC（免费换 IP；当天后端报 734152 错误需择期重试）
-
+   → 应急解法（已启用）：override 里给 VPS-ChatGPT 加 "dialer-proxy": "VPS-Hop"，流量经机场出国再连 VPS
 4. "VPN 正常但 ChatGPT TLS 握手挂死"（2026-10-28）= dialer-proxy 跳板到不了 VPS。
-   机场节点到 VPS 可达性不均匀（美国圣何塞/洛杉矶全系、部分日本节点不通；AWS日本01/美国01-0.1倍/
-   新加坡hy2/台湾/日本节点组/狮城组 通）。已改专用 VPS-Hop 组与主选择组解耦（见 TROUBLESHOOTING 当日条目）。
+   机场节点到 VPS 可达性不均匀且实时波动。已改专用 VPS-Hop 组与主选择组解耦。
    换跳板：MI_PIPE=<当前管道> node .diag-mihomo.cjs switch <节点名> VPS-Hop
+   管道名以 `wmic process where "name='mihomo.exe'" get CommandLine` 的 -ext-ctl-pipe 为准。
+5. 重装系统后 Reality 认证失败但服务端自环通过（2026-11-11）= 机场节点→VPS 链路对 Reality
+   握手的干扰（已知波动现象），服务端与客户端参数均正确。等待/轮换跳板节点即可恢复。
+   自环测试法（杀手锏）：在服务器上跑 xray 客户端配置连 127.0.0.1:443，curl --socks5 验证。
+6. KiwiVM 网页 Root shell 传长内容会丢字符：分条短命令 + base64 分段 + md5sum 校验；
+   pkill -f 会匹配到执行命令的 bash 自身（用 'xx[x]' 括号技巧），且 sed 等长命令可能
+   被截断成怪命令（如 "ray: command not found"）——发命令后必须验证回显与效果。

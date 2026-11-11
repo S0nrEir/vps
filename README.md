@@ -32,7 +32,7 @@
 | 系统 | Ubuntu 24.04 LTS |
 | 协议 | Xray VLESS + Reality (XTLS Vision)，端口 443 |
 | UUID | `b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e` |
-| Reality Public Key | `A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20` |
+| Reality Public Key | `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE` |
 | Short ID | `4ea0c2144409a72b` |
 | 伪装站 (SNI) | `www.lovelive-anime.jp` ⚠️ 勿用 microsoft/apple/google 系（抗量子TLS会破坏握手） |
 | 指纹 | chrome |
@@ -42,7 +42,7 @@
 **一键导入链接**（v2rayN / Shadowrocket / v2rayNG 通用）：
 
 ```
-vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
+vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
 ```
 
 ---

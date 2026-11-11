@@ -58,7 +58,8 @@ function main(config) {
     servername: "www.lovelive-anime.jp",
     "client-fingerprint": "chrome",
     "reality-opts": {
-      "public-key": "A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20",
+      // 2026-11-11: 重装后服务端换了新 X25519 密钥对(旧私钥不可恢复), UUID/short-id 复用旧的
+      "public-key": "IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE",
       "short-id": "4ea0c2144409a72b",
     },
     // dialer-proxy 历程:

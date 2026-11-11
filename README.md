@@ -34,7 +34,7 @@
 | 服务器 | 搬瓦工 20G KVM PROMO，$49.99/年（优惠码 `BWH3HYATVBJW` 实付约 $46.7/年） |
 | 机房 / IP | CA Vancouver (CABC_1) · **104.129.181.52**（2026-10-26 面板确认；原记录洛杉矶 USCA_2。IP 被墙期间经机场链式中转，见文首警示） |
 | 系统 | Ubuntu 24.04 LTS |
-| 协议 | Xray VLESS + Reality (XTLS Vision)，端口 443 |
+| 协议/端口 | Xray VLESS+Reality (XTLS Vision) **8443 主用** + 443 httpupgrade 备用（2026-11-11 晚起，规避机场对 443 的干扰，见警示） |
 | UUID | `b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e` |
 | Reality Public Key | `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE` |
 | Short ID | `4ea0c2144409a72b` |

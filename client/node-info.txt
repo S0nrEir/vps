@@ -5,8 +5,8 @@
 ⚠️ 2026-11-11 上午因滥用事件重装系统（Ubuntu 24.04），服务端全套重建，密钥对已更换（见下）。
 ⚠️ 2026-11-11 实测：BWH 边缘掐 22 端口入站（机器内 sshd 正常、无防火墙，但机场节点到 22 拿不到
    banner）；443 入站正常。SSH 需走 443 跳板链（见下）。
-端口      : 443
-协议      : VLESS + Reality (Xray 26.11.9)
+端口      : 8443（主用，Reality）+ 443（备用，httpupgrade /hub7q Host:www.bing.com）
+协议      : VLESS + Reality (Xray 26.11.9) / httpupgrade（同一 xray 双 inbound 常驻）
 UUID      : b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e   （沿用旧值）
 Public Key: IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE   （2026-11-11 服务端 xray x25519 原生生成）
 Short ID  : 4ea0c2144409a72b   （沿用旧值）
@@ -21,7 +21,7 @@ Flow      : xtls-rprx-vision
 
 ---------- 一键导入链接（v2rayN / Shadowrocket / v2rayNG 剪贴板导入）----------
 
-vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
+vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:8443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
 
 ---------- 服务器管理 ----------
 
@@ -52,6 +52,9 @@ SSH 跳板链（2026-11-11 起的标准通道；直连 22/443 均被墙+22 被 B
 5. 重装系统后 Reality 认证失败但服务端自环通过（2026-11-11）= 机场节点→VPS 链路对 Reality
    握手的干扰（已知波动现象），服务端与客户端参数均正确。等待/轮换跳板节点即可恢复。
    自环测试法（杀手锏）：在服务器上跑 xray 客户端配置连 127.0.0.1:443，curl --socks5 验证。
+   深夜定性升级：干扰为协议无关逐连接随机（443/8443 Reality、443 httpupgrade 全中招），系机场
+   反二级代理措施（本 IP 在代理黑名单）。8443 部分规避（true 窗口 2-3 成、波次性）；根治=换 IP
+   （KiwiVM 免费迁移）或换机场。
 6. KiwiVM 网页 Root shell 传长内容会丢字符：分条短命令 + base64 分段 + md5sum 校验；
    pkill -f 会匹配到执行命令的 bash 自身（用 'xx[x]' 括号技巧），且 sed 等长命令可能
    被截断成怪命令（如 "ray: command not found"）——发命令后必须验证回显与效果。

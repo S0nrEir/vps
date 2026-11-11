@@ -49,7 +49,7 @@ function main(config) {
     name: "VPS-ChatGPT",
     type: "vless",
     server: "104.129.181.52",
-    port: 443,
+    port: 8443,
     uuid: "b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e",
     network: "tcp",
     udp: true,
@@ -58,16 +58,12 @@ function main(config) {
     servername: "www.lovelive-anime.jp",
     "client-fingerprint": "chrome",
     "reality-opts": {
-      // 2026-11-11: 重装后服务端换了新 X25519 密钥对(旧私钥不可恢复), UUID/short-id 复用旧的
+      // 2026-11-11: 重装后服务端换新密钥对(旧私钥不可恢复), UUID/short-id 复用旧值
       "public-key": "IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE",
       "short-id": "4ea0c2144409a72b",
     },
-    // dialer-proxy 历程:
-    // 2026-10-26: VPS IP 被 GFW 封锁(TCP级, 22/443直连超时), 加 dialer-proxy 经机场出国再连 VPS,
-    //   ChatGPT 出口仍是 VPS 固定 IP, 不破坏固定出口纪律。迁移换新 IP 后删除 dialer-proxy 即恢复直连。
-    // 2026-10-28: 不再硬编码 "BoostNet"(只有 BoostNet 订阅有该组, 换订阅必炸), 改动态解析主选择组。
-    // 2026-10-28 晚: 主选择组与 VPS 可达性耦合仍是隐患(主选节点到不了 VPS → ChatGPT 全断), 改为
-    //   专用 VPS-Hop 组, 默认选中实测可达节点, 主选择组随便怎么切都不影响 ChatGPT 链路。
+    // 2026-11-11 晚: 机场对 Reality 逐连接随机篡改, 443→8443 部分规避(auth true 窗口约2-3成);
+    // 服务端同时保留 443=httpupgrade 备用。机场恢复后 git 历史有原版 443 Reality 配置。
     "dialer-proxy": "VPS-Hop",
   });
 

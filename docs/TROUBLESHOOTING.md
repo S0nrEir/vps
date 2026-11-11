@@ -1,5 +1,78 @@
 # 部署问题全记录（2026-10-01 实战排查日志）
 
+## 2026-11-11（下午）：二次滥用暂停 —— 攻击者清防火墙真发赌场邮件 → 整机重装 + 防火墙升级 + 面板改密
+
+**现象**：上午处理完 at 队列恶意脚本并封出站 25/465/587 后约 4 小时（abuse 日志时间戳 1794371028~1794372026
+= 北京时间 12:23–12:38，面板日志时间戳是 Unix 秒，换算 timeline 很方便），VPS 再次被 IT7 暂停
+（`Network abuse: Mass Mailing`，再 +100 分 → **年内累计 200/1300**）。本次与上午"空邮件探测"性质不同：
+**实际投递成功**——大量 587 端口外连（HELO 为裸 IP `31.76.11.151`）+ 25 端口打 Yahoo MX（HELO 伪装
+`billing.midjourney.com` / `trust.gamma.app` / `anthropic.ai` 等），其中一封赌场诈骗信
+（`Win Now <Casino@smsnet.pl>`，主题 "Your $200 treat, free spins too"）经 `216.157.33.76:587` 送出、
+对端 250 已接收；客户端标识 **Microsoft Windows Live Mail 14.0.8117.416** —— 全新一波样本，与上午的
+`netstat_probe` 不是同一驻留。
+
+**为什么上午的防线没用**：iptables REJECT 挡不住仍持有 root 的攻击者——规则可被 `iptables -F` 直接清掉。
+上午条目"遗留/待办"第 1 条（尽快重装）当天下午即被现实验证为唯一正解。
+
+**处理**（全部经 KiwiVM 面板网页完成，桌面自动化实操）：
+1. 面板 "I understand the issue and ready to resolve it right away" 确认解封（Issue marked as resolved）
+2. **Install new OS → ubuntu-24.04-x86_64 整机重装**（勾选数据清空确认 + JS 弹窗二次确认），旧盘数据与
+   全部入侵痕迹清空，装完自动开机 Running。产物：**临时 root 密码**（面板显示 + 邮件送达注册邮箱，
+   不写入本仓库）、**SSH 端口回到 22、密码登录恢复**（旧系统 publickey-only 加固随盘消失）
+3. **防火墙重建并升级**，unit 更名 `smtp-block.service`（旧名 `block-smtp-out` 随旧系统消亡，全文见下）：
+   - 端口 25/465/587/**2525**（补上常见备用 SMTP 端口，上午版本的缺口）
+   - **出站 + 入站双向** REJECT（旧版只封出站）
+   - IPv4 + IPv6；放行 `127.0.0.0/8` 与 `-o lo`（本机 MTA / 应用间通信不受影响）
+   - 已 `systemctl enable`（enabled，开机自动下发），当次规则也已手动下发立即生效
+4. **KiwiVM 面板登录密码已更换**（新密码不写入仓库，当面交付）
+
+**验证**：`iptables -S INPUT/OUTPUT` 可见 REJECT 行（reject-with icmp-port-unreachable）；`PERSIST_OK` +
+`systemctl is-enabled smtp-block.service` = enabled（symlink 已创建）；面板显示
+"KiwiVM panel password has been changed successfully"。
+
+**遗留 / 待办**：
+- ⚠️ **Xray（vless+reality:443）随重装消失，ChatGPT/Codex 链路（VPS-ChatGPT 节点）当前不可用**。
+  恢复：SSH 登录重跑 `server-setup.sh`（README「重装系统」节）。注意脚本每次**生成全新 UUID + Reality 密钥对**，
+  旧 Reality **私钥从未备份**（客户端与 README 只有公钥，无法复用）→ 部署后必须把脚本输出的新 VLESS URL
+  同步 4 处：README 关键信息卡、`client/clash-party-override.js`（及生效副本
+  `E:\clash party\data\override\vpschatgpt01.js`）、`client/boostnet-chain/` 配置、`~/.ssh` 不受影响无需动
+- SSH 加固重做：Root shell 把自己的公钥追加回 `/root/.ssh/authorized_keys`（旧的别信）→ `passwd` 换掉临时
+  密码 → 恢复 publickey-only 登录
+- abuse 年内累计 200/1300，剩余容错不多；新防火墙双向+2525 且系统是干净盘。再有滥用告警：别排查，直接重装
+- 运维：KiwiVM 网页全流程（解封 / 重装 / Root shell / 改面板密码）可无人值守操作；Root shell – basic
+  长命令仍要控制长度（本轮 printf 写 unit 成功，但超长命令有丢字符风险，可拆两条）
+
+**复贴：smtp-block.service 全文**（下次重装后照抄重建，`systemctl daemon-reload && systemctl enable --now smtp-block`）：
+
+```ini
+[Unit]
+Description=Block SMTP ports anti-spam
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iptables -I OUTPUT -d 127.0.0.0/8 -p tcp -m multiport --dports 25,465,587,2525 -j ACCEPT
+ExecStart=/usr/sbin/iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587,2525 -j REJECT
+ExecStart=/usr/sbin/iptables -A INPUT -p tcp -m multiport --dports 25,465,587,2525 -j REJECT
+ExecStart=/usr/sbin/ip6tables -I OUTPUT -o lo -p tcp -m multiport --dports 25,465,587,2525 -j ACCEPT
+ExecStart=/usr/sbin/ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587,2525 -j REJECT
+ExecStart=/usr/sbin/ip6tables -A INPUT -p tcp -m multiport --dports 25,465,587,2525 -j REJECT
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**教训**：
+- **root 级入侵的机器，任何"就地清理 + 防火墙"都是治标**——攻击者与管理员对内核防火墙有同等权限，
+  修复后 4 小时内即可清规则复犯。唯一正解：重装 + 换全部凭据 + 入口收敛，且当天执行
+- 备份惯例缺一口：**服务器端配置（含 Reality 私钥）从未随仓库留档**，重装的隐性代价 = 客户端四处换钥。
+  下次部署后把服务器 `config.json` 留档一份（私有的话放私有渠道，至少灾难恢复时能复用密钥对）
+- 面板 abuse 日志给的时间戳/收件人/HELO/客户端标识足够复盘整波攻击，先读日志再决定动不动手
+
+---
+
 ## 2026-11-11（上午）：VPS 因 Mass Mailing 被滥用暂停 —— at 队列恶意脚本，出站 25/465/587 全封
 
 **现象**：KiwiVM 面板弹出滥用暂停页（Abuse points **100/1300**，年内累计制，满 1300 永久封到年底），
@@ -27,6 +100,8 @@ martinfowler.com / ping.mcp.so / aif.runwayml.com 等正规域名，STARTTLS 后
    `block-smtp-out` enabled
 
 **遗留 / 待办**：
+- ✅ **本条已执行**：当日下午整机重装 + 防火墙升级为 `smtp-block.service`（双向+2525）+ 面板改密，见上方条目。
+  以下原判断全部被现实验证（攻击者 4 小时后清规则复犯、真发出邮件）
 - ⚠️ **根级入侵已成事实，清掉一个驻留点不等于干净**。建议尽快在 KiwiVM 里 snapshot 备份后一键重装。
   重装后第一件事：(a) 把自己的公钥配回 `authorized_keys`（旧的别信）；(b) 重建下面的防火墙 unit
 - 报警器：`dmesg | grep SMTPBLK`，有输出 = 还有残留程序在尝试外发，更要尽快重装

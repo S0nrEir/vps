@@ -186,8 +186,12 @@ bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release
 **伪装站失效怎么办**（握手秒失败，见 Troubleshooting 问题3）：
 把 `deploy/desttest.sh` 传上服务器跑一遍，它会自动找出当前可用的伪装站并写入配置。
 
-**重装系统**：KiwiVM → Install new OS (Ubuntu 24.04) → 重跑 `bash server-setup.sh` →
-换回密钥（重装会清空 authorized_keys，用 KiwiVM 面板的 Root shell 把 `~/.ssh/id_rsa.pub` 追加回 `/root/.ssh/authorized_keys`）→ 更新客户端无需变动（UUID 等会重新生成，需同步 `client/` 文件）
+**重装系统**（2026-11-11 下午实战过）：KiwiVM → Install new OS (Ubuntu 24.04) → SSH 登录重跑 `bash server-setup.sh`
+→ 脚本每次**生成全新 UUID + Reality 密钥对**（旧私钥只存在服务器上、从未备份，无法复用），必须把输出的新
+VLESS URL 同步 3 处：本文件关键信息卡、`client/clash-party-override.js`（及生效副本
+`E:\clash party\data\override\vpschatgpt01.js`）、`client/boostnet-chain/` 配置
+→ Root shell 把 `~/.ssh/id_rsa.pub` 追加回 `/root/.ssh/authorized_keys`、`passwd` 换掉临时密码、恢复 publickey-only
+→ 防火墙 unit 也会被重装清掉，照 TROUBLESHOOTING.md 2026-11-11（下午）条目复贴的 `smtp-block.service` 重建
 
 ---
 

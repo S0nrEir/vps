@@ -1,225 +1,190 @@
-# ChatGPT 专用固定出口 IP（自建 VPS 代理）
+# ChatGPT 专用 VPS 固定出口
 
-> **这个项目是干嘛的**：在海外 VPS 上自建一个只有你一个人用的代理节点，
-> 让 ChatGPT 的所有流量永远从同一个固定 IP 出去，彻底避免"机场节点轮换 → IP 频繁变化 → 触发风控/封号"。
-> 其他流量不受影响：外网照常走原有机场，国内照常直连。
+让进入本机代理并命中规则的 ChatGPT/OpenAI 请求，经机场跳板连接 VPS，再从 VPS 出口访问目标。
+普通上网继续使用订阅分流，公司内网和私网优先直连。固定出口用于保持路由一致，不保证账号免于风控；
+未进入代理的流量也不受这些规则约束。
 
-**部署状态：✅ 2026-10-01 全部完成并验证通过**（当天踩坑与排查实录见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)）
+**2026-11-11 已验证赔钱机场链路恢复**：
 
----
-
-## 一图看懂
-
-```
-                    ┌─ chatgpt.com / openai.com 等 ──> 你的 VPS (104.129.181.52, 固定) ──> ChatGPT
-你的电脑 (Clash Party)
-                    └─ 其他所有流量 ──> 原有机场 / 直连（完全不变）
+```text
+本机 Clash Party
+  ├─ GPT 规则 / 专用入口 → 赔钱机场 AWS日本01（VPS-Hop）→ VPS:8443 → ChatGPT
+  └─ 普通请求 → 原订阅规则（机场 / 直连）
 ```
 
-> ⚠️ **2026-11-11 重装重建**：两次滥用暂停后整机重装 Ubuntu 24.04，服务端已全套重建
-> （新 Reality 公钥 `IOied7...`，UUID/short-id 沿用；**22 入站被 BWH 掐，SSH 走机场跳板连
-> 443**，命令见 node-info.txt）。当晚机场对 Reality 握手有间歇性干扰（auth true/false 随机），
-> 时通时断属机场侧波次，两端配置已自环终审无误——详见 TROUBLESHOOTING 当日两条目。
-> ⚠️ **2026-10-26 起临时变更**：VPS IP 被 GFW 封锁（TCP级），已给 VPS-ChatGPT 节点启用
-> `dialer-proxy: BoostNet` 链式转发——去 VPS 的流量先经机场出国再连 VPS，**ChatGPT 看到的
-> 出口 IP 不变（仍是 VPS）**。迁移换新 IP 后删除 override 里那一行即恢复直连。详见
-> [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) 当日条目。
+实际服务端为 **8443=Reality，443=HTTPUpgrade**。修复包括同步安装覆写的新公钥和跳板，
+并增加 `reality-opts.support-x25519mlkem768: true`。
+正式入口连续 5 次 trace 均返回 `104.129.181.52`；SSH 直连 22 也已恢复。
+先前“机场随机篡改/反二级代理”的归因已撤回，详见
+[本次故障、解决办法与验证证据](docs/2026-11-11-PEIQIAN-DIAGNOSIS.md)。
+[历史排障记录](docs/TROUBLESHOOTING.md) 保留当时现象，不代表当前端口和可达性。
 
----
-
-## 关键信息卡（换机器/重装时看这里）
+## 当前参数（2026-11-11 实机复核）
 
 | 项目 | 值 |
 |---|---|
-| 服务器 | 搬瓦工 20G KVM PROMO，$49.99/年（优惠码 `BWH3HYATVBJW` 实付约 $46.7/年） |
-| 机房 / IP | CA Vancouver (CABC_1) · **104.129.181.52**（2026-10-26 面板确认；原记录洛杉矶 USCA_2。IP 被墙期间经机场链式中转，见文首警示） |
-| 系统 | Ubuntu 24.04 LTS |
-| 协议/端口 | Xray VLESS+Reality (XTLS Vision) **8443 主用** + 443 httpupgrade 备用（2026-11-11 晚起，规避机场对 443 的干扰，见警示） |
+| VPS | 搬瓦工，Ubuntu 24.04 LTS，Xray 26.11.9 |
+| IP / 机房 | **104.129.181.52**；CA Vancouver CABC_1（2026-10-26 面板记录） |
+| 主用入站 | VLESS + Reality + XTLS Vision，TCP **8443** |
+| 备用入站 | VLESS + HTTPUpgrade，443，path `/hub7q`，Host `www.bing.com`，无 TLS、无 flow |
 | UUID | `b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e` |
 | Reality Public Key | `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE` |
 | Short ID | `4ea0c2144409a72b` |
-| 伪装站 (SNI) | `www.lovelive-anime.jp` ⚠️ 勿用 microsoft/apple/google 系（抗量子TLS会破坏握手） |
-| 指纹 | chrome |
-| SSH | `ssh vps-chatgpt`（密钥 `~/.ssh/id_rsa`，`~/.ssh/config` 条目 2026-10-26 已建；密码登录已禁用。IP 被墙期间 22 不通，登录走 KiwiVM 面板 Root shell） |
-| 面板 | https://kiwivm.64clouds.com （换IP/重装/迁移都在这） |
+| SNI / dest | `www.lovelive-anime.jp` / `www.lovelive-anime.jp:443` |
+| 本机客户端 | Mihomo 1.19.32；`client-fingerprint: chrome`；`reality-opts.support-x25519mlkem768: true` |
+| 当前跳板 | 赔钱机场 `🇯🇵AWS日本01 \| 电信移动联通推荐`，由 `VPS-Hop` 选择 |
+| SSH | `ssh vps-chatgpt`，直连 22；本机密钥 `~/.ssh/vps_chatgpt` |
+| 服务端配置 | `/usr/local/etc/xray/config.json`，服务用户 `xray` |
+| 面板 | [KiwiVM](https://kiwivm.64clouds.com) |
 
-**一键导入链接**（v2rayN / Shadowrocket / v2rayNG 通用）：
+不能用 Reality 配置连接当前 443 入站。SNI 以实际服务器配置为准，不按网站所属公司判断兼容性。
+ML-KEM 开关是本次 Xray/Mihomo 组合实测需要的参数，见
+[Mihomo 官方说明](https://wiki.metacubex.one/config/proxies/tls/#reality-optssupport-x25519mlkem768)。
 
+VLESS 导入链接：
+
+```text
+vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:8443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
 ```
-vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
+
+链接不包含机场跳板，也不能保证导入器设置 ML-KEM 开关。Mihomo 推荐直接使用仓库覆写。
+本次未验证 v2rayN、Shadowrocket、v2rayNG 或移动端；使用时需核对内核兼容性与前置代理。
+
+## Clash Party 配置
+
+1. 添加机场订阅并确认普通外网可用。本次目标订阅是**赔钱机场**。
+2. 覆写 → 新建 → JavaScript → 导入 [client/clash-party-override.js](client/clash-party-override.js)，打开“全局”。
+3. 触发配置重新生成：本次通过界面切换订阅、切换覆写开关生效。外部改磁盘文件不等于运行配置已更新；
+   如未更新，再重启对应内核或客户端。
+4. 在 `VPS-Hop` 选择已测试的跳板，并核对运行配置中的 8443、新公钥、ML-KEM 和 `dialer-proxy: VPS-Hop`。
+5. 用下节命令验证新连接的出口。旧连接可能沿用启用覆写前的路由，需要关闭对应连接或重开应用。
+
+本机安装副本为 `E:/clash party/data/override/vpschatgpt01.js`，运行配置为
+`E:/clash party/data/work/config.yaml`。仓库文件修改后要同步安装副本；改运行配置本身不能替代持久覆写。
+
+数据目录与控制管道以实际 Mihomo 命令行为准：
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" | Select-Object ProcessId, CommandLine
 ```
 
----
+覆写提供以下行为：
 
-## 客户端配置（本机已配好，此节供新机器使用）
+- 内网域名 `*.cyou-inc.com`、私网和回环规则最先匹配。
+- 之后匹配 `ChatGPT.exe`、`Codex.exe`、`codex.exe` 进程及 OpenAI 系域名，送入 `VPS-ChatGPT`。
+  进程规则只作用于进入 Mihomo 且能识别进程的请求；TUN/防火墙未强制拦截应用自行直连。
+- `VPS-ChatGPT` 经 `VPS-Hop` 拨号。成员按订阅名称筛选，候选不等于全部已验证。
+  选择独立节点时不随普通上网主组切换；若选择了兜底主组或自动选择组，则仍受该组选择影响。
+  无候选且无主组时 `DIRECT` 表示**直连 VPS**，不表示直接访问 ChatGPT。
+- `127.0.0.1:17899` 是固定指向 VPS 的专用 mixed 入口；普通入口 7890 按规则分流。
+  没有配置 VPS 故障后自动改用机场出口的回退。
 
-所有可迁移的配置文件都在仓库的 **`client\`** 目录，拷走这个文件夹即可在新机器接入。
+换机器需另行配置机场订阅、SSH 密钥授权和兼容内核，不能只复制 `client/` 就视为部署完成。
 
-### 场景 A：新电脑用 Clash Party / Mihomo Party（推荐，完整步骤）
-
-> VPS-Hop 成员由正则从当前订阅自动过滤（AWS日本01/美国01-0.1倍/新加坡hy2/台湾/日本节点组/狮城组），
-> 匹配不到时兜底第一个 select 组——换机场一般无需改脚本；若新机场节点命名风格完全不同，
-> 改 `client/clash-party-override.js` 里的 `hopPrefs` 正则即可。
-
-1. 安装 [Clash Party](https://github.com/mihomo-party-org/clash-party/releases)
-2. 添加你的机场订阅（照常），确认代理页能选中节点、外网能通
-3. **覆写 → 新建 → JavaScript → 导入 `client/clash-party-override.js` → 打开"全局"开关**
-4. **重启 Clash Party**（覆写改动不热加载，改任何一行都要重启；验证标志：
-   `data/work/config.yaml` 修改时间刷新且含 `VPS-ChatGPT`）
-   - 手动等价操作（不用文件导入时）：把文件复制到数据目录 `override/vpschatgpt01.js`，
-     并在 `override.yaml` 注册条目（格式见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) 问题4）
-   - 数据目录以 mihomo 进程 `-d` 参数为准：`wmic process where "name='mihomo.exe'" get CommandLine`
-5. 跑下面的"验证是否生效"
-
-**这份 override 做了什么**（改配置前先读懂）：
-
-- 注入 `VPS-ChatGPT` 节点（VLESS+Reality，参数见关键信息卡）
-- `find-process-mode: always` + `PROCESS-NAME` 规则：`ChatGPT.exe`/`Codex.exe`/`codex.exe`
-  的**所有**请求走 VPS（兜住第三方资源）；再加一排 OpenAI 系域名规则兜住非桌面端流量
-- 公司内网（`*.cyou-inc.com`、RFC1918 私网、本机回环）规则排在最前 → ChatGPT 内置
-  浏览器访问公司内网直连，不会被送出国
-- **`"dialer-proxy": "VPS-Hop"`（2026-10-26 链式加入，10-28 晚改为专用组）**：VPS IP 被 GFW 封锁
-  （TCP 级），去 VPS 的 TCP 先经机场节点出国、再从国外连 VPS，**ChatGPT 看到的出口仍是 VPS 固定 IP**。
-  `VPS-Hop` 是覆写注入的专用 select 组，成员=实测可达 VPS 的节点（机场节点到 VPS 可达性不均匀），
-  与主选择组解耦——主选节点随便切不影响 ChatGPT 链路。ChatGPT 断链换跳板：
-  `MI_PIPE=<当前管道> node .diag-mihomo.cjs switch <节点名> VPS-Hop`。KiwiVM 迁移换新 IP 后
-  恢复直连：删掉 dialer-proxy 一行重启即可
-
-**被墙期间各配置的可用性**：
-
-| 配置 | 被墙期间 |
+| 配置 | 本轮验证范围 |
 |---|---|
-| Clash Party + override（场景 A，含 dialer-proxy） | ✅ 正常（本机当前方案） |
-| v2rayN / Shadowrocket 直连 VPS（场景 B/C） | ❌ 不通（直连被墙，需自行套前置代理） |
-| `clash-chatgpt.yaml`（独立无机场配置） | ❌ 不通（同上；有任意可用代理才能链式中转） |
+| Clash Party + 赔钱机场 + 全局覆写 | 已验证正式链路及 7890/17899 出口 |
+| [独立 YAML](client/clash-chatgpt.yaml) | 已同步 VPS 参数；没有机场前置，直连路径本轮未验证 |
+| [BoostNet 链式配置](client/boostnet-chain/config.yaml) | 仅同步 VPS 参数；本轮未验证 BoostNet |
+| 其他客户端 / 手机 | 需单独验证导入参数、前置代理与最终出口 |
 
-### 场景 B：新电脑用 v2rayN
+### 可选的 7899 转发器
 
-复制上面的一键导入链接 → v2rayN「从剪贴板导入」→ 手动把路由规则设为：ChatGPT 域名走代理、其余绕过大陆。
+[client/proxy-fallback.js](client/proxy-fallback.js) 是历史部署使用的本地转发器。
+上游 Clash 不可用时，受保护的 ChatGPT/OpenAI 域名返回 502，不回退直连；其他域名保留其原有行为。
+它依赖域名识别，不能把未知域名自动认作 Codex 流量。
 
-### 场景 C：iPhone / Android
-
-- iOS：Shadowrocket → 剪贴板导入一键链接；建议在配置里仅对 ChatGPT 域名启用该节点
-- Android：v2rayNG → 剪贴板导入
-- **手机和电脑走同一个 VPS 出口**，所有设备同一 IP，这是风控最舒服的状态
-
-### 场景 D（可选）：Codex CLI 等工具的 7899 本地转发器
-
-这台机器上 Codex 用的不是 7890 而是 `127.0.0.1:7899`——一个 Node 写的小转发器
-（`client/proxy-fallback.js`），作用：上游 Clash 不可用时，**ChatGPT/OpenAI 保护域名直接
-返回 502、绝不降级直连**（防止 GPT 流量偷偷从本机 IP 出去触发风控），其他域名保留原行为。
-
-新机器部署：
-
-1. 装 Node.js
-2. 把 `client/proxy-fallback.js` 复制到 `%USERPROFILE%\.proxy-fallback\proxy-fallback.js`
-3. 同目录建 `start-hidden.vbs`（一行）：`createobject("wscript.shell").run "node ""%USERPROFILE%\.proxy-fallback\proxy-fallback.js""",0`
-4. 注册开机自启（管理员 PowerShell）：
-   `New-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name ProxyFallback -Value 'wscript.exe "%USERPROFILE%\.proxy-fallback\start-hidden.vbs"' -Force`
-5. 跑一次 `wscript.exe "%USERPROFILE%\.proxy-fallback\start-hidden.vbs"`，验证
-   `curl -x http://127.0.0.1:7899 https://api.openai.com/cdn-cgi/trace | grep ^ip=`
-   输出 `ip=104.129.181.52` 即成功（日志在同目录 `proxy-fallback.log`）
+需要时用 Node.js 运行该脚本，并让目标工具显式使用 `http://127.0.0.1:7899`，验证后再配置自启动。
+本轮未重新验证 7899 监听，不能据旧记录认定当前 Codex 一定使用它；
+本次看到的 Codex 连接由 Mihomo 进程规则送往 VPS。
 
 ### concept-generator 专用入口
 
-`client/clash-party-override.js` 同时提供仅监听 `127.0.0.1:17899` 的 mixed 入口 `concept-generator-vps`，固定 `proxy: VPS-ChatGPT`，复用 `VPS-Hop` 跳板。该入口不经过普通域名分流，因此 GPT 请求和 OpenAI/Azure 附件下载都使用 VPS 出口；节点失败时失败，不回退到机场出口或直连。
+覆写中的 `concept-generator-vps` 监听 `127.0.0.1:17899`，固定 `proxy: VPS-ChatGPT`，
+复用 `VPS-Hop`。进入此端口的请求和附件下载都使用 VPS 出口，节点故障时请求失败。
 
-`E:\project_A1\project_A1\work-flow\concept-generator` 的 Codex 子进程和附件 HTTPS Agent 使用此入口；本机 GUI 服务仍为 `127.0.0.1:18788`。工具要求 Node.js 24.5+。部署后验证：
+工具部署与完整流程测试见 [2026-11-03 验证记录](docs/CONCEPT-GENERATOR-ROUTING-VERIFICATION.md)。
+本轮复测了 17899 的 OpenAI trace；没有重跑完整生成或私有附件下载流程。
+
+## 验证与快速分诊
+
+Windows PowerShell 使用 `curl.exe`，清空 NO_PROXY 绕过列表，并显式指定代理：
 
 ```powershell
-curl.exe --noproxy "" --proxy http://127.0.0.1:17899 https://chatgpt.com/cdn-cgi/trace
+curl.exe --max-time 30 --noproxy "" --proxy http://127.0.0.1:7890 https://chatgpt.com/cdn-cgi/trace
+curl.exe --max-time 30 --noproxy "" --proxy http://127.0.0.1:17899 https://api.openai.com/cdn-cgi/trace
+curl.exe --max-time 30 --noproxy "" --proxy http://127.0.0.1:7890 https://www.cloudflare.com/cdn-cgi/trace
 node client/test-routing.cjs
 ```
 
-出口应为 `104.129.181.52`。停用 17899 会让该工具的外部请求失败；原有 7890/7899 配置继续服务其他应用。
+前两项应为 `ip=104.129.181.52`，本轮 `colo=YVR`；第三项按订阅普通分流，本轮为机场出口。
+`colo` 是 Cloudflare 接入点，不能单独证明 VPS 物理机房。trace 成功证明该请求链路可用，
+不等于所有应用功能、登录会话和 UDP 都已通过测试。
 
-### 验证是否生效
+| 症状 | 下一步 |
+|---|---|
+| `REALITY authentication failed` | 分清外层机场与内层 VPS 握手；核对实际入站、端口、公钥、short-id、SNI、指纹和 ML-KEM |
+| CONNECT 200 后超时 / delay API 503 | 只说明后续测试失败；继续查机场出网、VPS 端口、认证、目标响应，不能直接归因机场 |
+| GPT 和普通外网都失败 | 检查本地代理是否运行、订阅和跳板是否可用、DNS 与网络 |
+| trace 出口不是 VPS | 核对规则模式、实际运行配置、专用入口及旧连接；确认没有 NO_PROXY 绕过 |
+| trace 正常但应用仍失败 | 对照该进程连接和具体请求错误，再检查应用会话、目标响应；不能只凭 trace 判为缓存问题 |
 
-```bash
-# 1) ChatGPT 出口 = VPS 固定 IP 即成功（被墙期间走链式转发，结果一样是 VPS IP）
-curl -x http://127.0.0.1:7890 https://chatgpt.com/cdn-cgi/trace | grep -E '^(ip|colo)='
-# 期望: ip=104.129.181.52   （colo=YVR 说明流量确实从 VPS 所在的温哥华机房出去）
-
-# 2) 对照：普通外网仍走机场（不应是 VPS IP）
-curl -x http://127.0.0.1:7890 https://www.apple.com -o /dev/null -w '%{http_code}\n'
-# 期望: 200，且 Clash 连接页里 apple 走的是 BoostNet 而非 VPS-ChatGPT
-```
-
-**失败时的快速分诊**（详细排查链见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)）：
-
-| 症状 | 结论 | 动作 |
-|---|---|---|
-| trace 超时 + Clash 日志 `dial tcp 104.129.181.52:443 i/o timeout` | dialer-proxy 没生效（VPS 在直连） | 检查 override 里是否删了/没写 `dialer-proxy` 行；确认重启过 Clash Party；确认机场组名一致 |
-| trace 超时 + apple 也失败 | 机场这跳挂了 | Clash Party 里换 BoostNet 选中节点 |
-| `ip=` 显示别的地址 | 分流规则没命中，流量走了机场 | 确认覆写"全局"开关打开、重启过；查 work/config.yaml 是否含 VPS-ChatGPT 规则 |
-| 以上都对但 ChatGPT 应用仍报错 | 应用侧缓存/会话问题 | 重开 ChatGPT 应用；再看 Clash 日志该进程是否命中 `PROCESS-NAME` 规则 |
-
----
-
-## 日常使用纪律（防风控，比技术更重要）
-
-1. **永远同一个出口**：所有设备都走这个 VPS，不要今天 VPS 明天机场
-2. **不要共享节点**给别人——多用户同 IP 是高危信号
-3. 换 IP 是大事：这个 IP 用住了就别动，VPS 不销毁 IP 永远不变
-4. 浏览器语言/时区保持稳定，别和 IP 变化叠加出现
-
-## 维护手册
+## 维护与重装
 
 ```bash
-ssh vps-chatgpt                 # 登录服务器（唯一入口，密钥制）
-systemctl status xray           # 服务状态
-journalctl -u xray -f           # 实时日志
-systemctl restart xray          # 重启服务
-/usr/local/bin/xray version     # 版本
+ssh vps-chatgpt
+systemctl status xray
+ss -lntp
+journalctl -u xray -n 50 --no-pager
+/usr/local/bin/xray version
 ```
 
-**升级 Xray**（配置不受影响）：
-```bash
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && systemctl restart xray
+服务 active 不能证明配置已加载；结合监听端口、进程启动时间、配置修改时间和端到端验证判断。
+更新 Xray 前备份配置及原内核，核对兼容性；升级后校验配置、重启服务并复测远端客户端。
+
+重装后的 SSH 主机指纹会变。先在可信的已登录 VPS 控制台运行
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 核对，再更新 known_hosts；
+不要直接关闭主机验证。公钥登录失败时检查本机实际使用的密钥、authorized_keys 完整性及权限。
+KiwiVM basic shell 每次提交一条命令，多行粘贴可能被拼接。优先恢复 SSH 后传输文件。
+
+[server-setup.sh](server-setup.sh) 是**覆盖式初始化脚本，不是幂等修复工具**。
+默认端口仍为 443；若在新系统建立本项目的 Reality 入口，应显式执行 `bash server-setup.sh 8443`。
+它会生成新 UUID、密钥对和 short-id，覆盖现有配置；只生成单个 Reality 入站，
+不会恢复当前双入站、SSH 加固、服务用户设置或 SMTP 防火墙。服务用户以安装器及实际 unit 为准。
+使用前先备份，重装步骤还需参考[历史安全事件与加固记录](docs/TROUBLESHOOTING.md)。
+
+新参数至少同步到 README、node-info、覆写母本与安装副本、独立 YAML，以及使用中的 BoostNet 配置。
+服务器私钥和机场订阅凭据只放在受控备份中，不提交仓库。
+完成配置校验和监听检查后，还要从实际机场路径验证 ChatGPT 出口；自环成功不能替代此步骤。
+
+连接失败先排除配置与兼容性，再调查线路。如果确认只有直连路径失败，可通过 `VPS-Hop` 中转。
+迁移或更换 IP 需以当时面板支持情况为准，不能保证解决问题；迁移后同步所有实际部署副本和 SSH HostName，
+验证新路径后再决定是否取消前置代理。历史迁移脚本中的路径和配置格式需先复核。
+
+[deploy/desttest.sh](deploy/desttest.sh) 是历史自环实验脚本：依赖 `/tmp/selftest.json`，
+假定第一个入站是 Reality，会反复改写正式配置、重启 Xray，并保留首个成功目标。
+当前双入站下不能直接照搬；认证失败应先核对参数和客户端兼容性。
+
+## 目录与历史费用
+
+```text
+F:/vps/
+├── README.md
+├── docs/
+│   ├── 2026-11-11-PEIQIAN-DIAGNOSIS.md
+│   ├── TROUBLESHOOTING.md
+│   └── CONCEPT-GENERATOR-ROUTING-VERIFICATION.md
+├── server-setup.sh
+├── deploy/desttest.sh
+├── backups/
+└── client/
+    ├── clash-party-override.js
+    ├── clash-chatgpt.yaml
+    ├── boostnet-chain/
+    ├── proxy-fallback.js
+    ├── test-routing.cjs
+    └── node-info.txt
 ```
 
-**IP 被墙了怎么办**（症状与诊断见 Troubleshooting）：
-1. 应急（分钟级恢复，当前已启用）：override 里给 VPS-ChatGPT 加 `"dialer-proxy": "BoostNet"`，
-   经机场出国再连 VPS，ChatGPT 出口 IP 不变
-2. 根治：KiwiVM → Migrate to another datacenter（免费，保留全部数据，得到新 IP；后端偶尔报
-   "not available, try again in 10-15 minutes" 就过一会再试）
-   → 跑 `bash backups/20261026-gfw-migration/update-ip.sh <新IP>` 一键换完本文件、`client/`、
-     Clash Party override 里的旧 IP 并更新 `~/.ssh/config`
-   → 删除 override 里 `"dialer-proxy"` 那一行 → 重启 Clash Party 恢复直连
-
-**伪装站失效怎么办**（握手秒失败，见 Troubleshooting 问题3）：
-把 `deploy/desttest.sh` 传上服务器跑一遍，它会自动找出当前可用的伪装站并写入配置。
-
-**重装系统**（2026-11-11 下午实战过）：KiwiVM → Install new OS (Ubuntu 24.04) → SSH 登录重跑 `bash server-setup.sh`
-→ 脚本每次**生成全新 UUID + Reality 密钥对**（旧私钥只存在服务器上、从未备份，无法复用），必须把输出的新
-VLESS URL 同步 3 处：本文件关键信息卡、`client/clash-party-override.js`（及生效副本
-`E:\clash party\data\override\vpschatgpt01.js`）、`client/boostnet-chain/` 配置
-→ Root shell 把 `~/.ssh/id_rsa.pub` 追加回 `/root/.ssh/authorized_keys`、`passwd` 换掉临时密码、恢复 publickey-only
-→ 防火墙 unit 也会被重装清掉，照 TROUBLESHOOTING.md 2026-11-11（下午）条目复贴的 `smtp-block.service` 重建
-
----
-
-## 目录结构
-
-```
-E:\vps\
-├── README.md                  ← 本文档（项目总览/关键信息/维护手册）
-├── docs\
-│   └── TROUBLESHOOTING.md     ← 部署踩坑全记录与排查方法论
-├── server-setup.sh            ← 服务端一键部署脚本（Ubuntu/Debian/Alma 通用）
-├── deploy\
-│   └── desttest.sh            ← 伪装站自动筛选脚本（排障神器）
-├── backups\                   ← 每次大改前的配置备份（按日期建目录）
-│   └── 20261026-gfw-migration\  ← 换IP脚本 update-ip.sh + 当日改动前的 .bak
-└── client\                    ← ★ 换机器时拷走这个文件夹
-    ├── clash-party-override.js  ← Clash Party 全局覆写（机场+ChatGPT分流+被墙期dialer-proxy链式转发）
-    ├── clash-chatgpt.yaml       ← 独立完整配置（无机场时的备选；被墙期间不可用）
-    ├── proxy-fallback.js        ← 7899 本地转发器源码（场景 D，Codex 用）
-    ├── test-routing.cjs         ← 路由规则回归测试（node client/test-routing.cjs）
-    └── node-info.txt            ← 节点参数卡片 + 踩坑速查
-```
-
-## 费用与续费
-
-- 搬瓦工 $49.99/年（约 ¥30/月），年付制，到期前邮件会提醒，KiwiVM/Client Area 可续费
-- 也可在 Client Area 设置自动续费（绑定 PayPal）
+历史购买记录为 20G KVM PROMO，标价 $49.99/年，优惠后约 $46.7/年。
+续费金额、到期时间和机房迁移条件以当前账户账单与面板为准。

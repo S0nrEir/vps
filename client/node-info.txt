@@ -1,60 +1,50 @@
-==================== VPS-ChatGPT 节点信息（2026-11-11 重装后重建）====================
+==================== VPS-ChatGPT 节点信息（2026-11-11 实机复核）====================
 
-服务器 IP : 104.129.181.52   （搬瓦工 CA Vancouver CABC_1，KiwiVM 2212317 fancy-swan-1）
-⚠️ 2026-10-26 该 IP 被 GFW 封锁（TCP级）。客户端已启用 dialer-proxy 经机场中转（见下），服务端零改动。
-⚠️ 2026-11-11 上午因滥用事件重装系统（Ubuntu 24.04），服务端全套重建，密钥对已更换（见下）。
-⚠️ 2026-11-11 实测：BWH 边缘掐 22 端口入站（机器内 sshd 正常、无防火墙，但机场节点到 22 拿不到
-   banner）；443 入站正常。SSH 需走 443 跳板链（见下）。
-端口      : 8443（主用，Reality）+ 443（备用，httpupgrade /hub7q Host:www.bing.com）
-协议      : VLESS + Reality (Xray 26.11.9) / httpupgrade（同一 xray 双 inbound 常驻）
-UUID      : b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e   （沿用旧值）
-Public Key: IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE   （2026-11-11 服务端 xray x25519 原生生成）
-Short ID  : 4ea0c2144409a72b   （沿用旧值）
-SNI/伪装  : www.lovelive-anime.jp   ⚠️ 不要用 www.microsoft.com（其抗量子TLS会导致握手失败）
+服务器 IP : 104.129.181.52（搬瓦工 CA Vancouver CABC_1）
+端口      : 8443
+协议      : VLESS + Reality + XTLS Vision（服务端 Xray 26.11.9）
+UUID      : b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e
+Public Key: IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE
+Short ID  : 4ea0c2144409a72b
+SNI/伪装  : www.lovelive-anime.jp
 Flow      : xtls-rprx-vision
 指纹      : chrome
+Mihomo 必须开启：reality-opts.support-x25519mlkem768: true
 
-密钥变更史：2026-10-01 部署密钥对（私钥仅存服务端）→ 2026-11-11 重装丢失 → 服务端
-`xray x25519` 原生重生成。旧公钥 A3LmS90c... 已作废。客户端 override 已同步新公钥。
-（教训：本地 Node crypto 生成的 X25519 对自环能过 TLS 转发，但 mihomo 客户端认证异常，
-统一用服务端 xray 原生输出最稳。）
+本机验证链路：Clash Party → 赔钱机场 AWS日本01 → VPS:8443 → ChatGPT。
+VPS-Hop 选独立节点时不随主组切换；本次 ChatGPT 出口为 104.129.181.52。
+本轮连续 5 次正式入口 trace 成功，colo=YVR；普通网站仍走机场出口。
 
----------- 一键导入链接（v2rayN / Shadowrocket / v2rayNG 剪贴板导入）----------
+注意：443 当前是 VLESS + HTTPUpgrade 入站，path=/hub7q、Host=www.bing.com、无 TLS/flow。
+不能拿 Reality 配置连接；主用配置保持 8443 Reality。
+旧公钥 A3LmS90c... 已失效。实际安装的覆写已同步仓库修正版。
+
+---------- 一键导入链接 ----------
 
 vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:8443?encryption=none&security=reality&sni=www.lovelive-anime.jp&fp=chrome&pbk=IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE&sid=4ea0c2144409a72b&type=tcp&flow=xtls-rprx-vision#VPS-ChatGPT
 
+Mihomo 导入 URL 后必须再检查 ML-KEM 选项；推荐使用 client/clash-party-override.js。
+其他客户端需使用兼容新版 Reality 的内核；本轮只验证了本机 Mihomo 1.19.32。
+
 ---------- 服务器管理 ----------
 
-SSH 跳板链（2026-11-11 起的标准通道；直连 22/443 均被墙+22 被 BWH 掐，必须经机场）:
-  ssh -i ~/.ssh/vps_reinstall -p 443 \
-    -o ProxyCommand="/mingw64/bin/connect -H 127.0.0.1:7890 %h %p" \
-    root@104.129.181.52
-  前提：mihomo 运行中(7890 混合端口)，且 VPS 出口组指向可达 VPS 的机场节点
- （AWS日本01 实测可达；圣何塞系不可达）。若 443 被 xray 占用无法 SSH 时，
-  可在 KiwiVM 网页 Root shell 临时 `/usr/sbin/sshd -p 443`（注意先 systemctl stop xray）。
-密钥      : ~/.ssh/vps_reinstall (ed25519, 2026-11-11)，密码登录已禁用
-面板      : https://kiwivm.64clouds.com  （搬瓦工 KiwiVM；SSH 全断时用 Root shell – basic）
+SSH       : ssh vps-chatgpt（直连 22；2026-11-11 本机实测恢复）
+密钥      : ~/.ssh/vps_chatgpt（本机原有 ed25519 运维密钥）
+主机指纹  : SHA256:cc/g+qJhcNcZ2+d6X9RBcy3JMJuRHR9d1eafEEEojO4
+配置      : /usr/local/etc/xray/config.json
+服务用户  : xray
+面板      : https://kiwivm.64clouds.com
 
----------- 踩坑记录（排查重复问题先看这里）----------
+本轮通过已登录的 VPS 控制台核对主机指纹后更新 known_hosts，并补回本机公钥。
+旧文档的 ~/.ssh/vps_reinstall 不存在于这台电脑；无需占用 443 启动临时 sshd。
 
-1. IP 被墙症状：TCP能连、Reality握手能完成、回程数据被掐（服务端日志显示请求已转发但客户端收不到）
-   → 解法：KiwiVM 免费迁移机房换 IP（Migrate to another datacenter）
-2. Reality 握手秒失败、服务器日志 "processed invalid connection"，任何网络路径（含服务器自环）都失败
-   → 原因：伪装目标启用了 X25519MLKEM768 抗量子TLS（微软/苹果/谷歌/亚马逊系站点陆续开启）
-   → 解法：换普通 X25519 的伪装站（当前 www.lovelive-anime.jp，备选 www.samsung.com、www.nvidia.com）
-   → 排查命令：F:\vps\deploy\desttest.sh 会自动逐个候选测试
-3. IP 被 GFW 封锁（TCP级：22/443 全超时但 ping 通，国外全可达）——2026-10-26 第二次
-   → 应急解法（已启用）：override 里给 VPS-ChatGPT 加 "dialer-proxy": "VPS-Hop"，流量经机场出国再连 VPS
-4. "VPN 正常但 ChatGPT TLS 握手挂死"（2026-10-28）= dialer-proxy 跳板到不了 VPS。
-   机场节点到 VPS 可达性不均匀且实时波动。已改专用 VPS-Hop 组与主选择组解耦。
-   换跳板：MI_PIPE=<当前管道> node .diag-mihomo.cjs switch <节点名> VPS-Hop
-   管道名以 `wmic process where "name='mihomo.exe'" get CommandLine` 的 -ext-ctl-pipe 为准。
-5. 重装系统后 Reality 认证失败但服务端自环通过（2026-11-11）= 机场节点→VPS 链路对 Reality
-   握手的干扰（已知波动现象），服务端与客户端参数均正确。等待/轮换跳板节点即可恢复。
-   自环测试法（杀手锏）：在服务器上跑 xray 客户端配置连 127.0.0.1:443，curl --socks5 验证。
-   深夜定性升级：干扰为协议无关逐连接随机（443/8443 Reality、443 httpupgrade 全中招），系机场
-   反二级代理措施（本 IP 在代理黑名单）。8443 部分规避（true 窗口 2-3 成、波次性）；根治=换 IP
-   （KiwiVM 免费迁移）或换机场。
-6. KiwiVM 网页 Root shell 传长内容会丢字符：分条短命令 + base64 分段 + md5sum 校验；
-   pkill -f 会匹配到执行命令的 bash 自身（用 'xx[x]' 括号技巧），且 sed 等长命令可能
-   被截断成怪命令（如 "ray: command not found"）——发命令后必须验证回显与效果。
+---------- 排查顺序 ----------
+
+1. 确认实际运行的是目标订阅、覆写已开启，work/config.yaml 含正确节点参数。
+2. 分别测试机场普通出网、VPS 端口/协议、最终 ChatGPT trace 的 ip。
+3. Reality 认证失败：核对端口、公钥、short-id、SNI、chrome 和 ML-KEM 开关。
+4. 链式代理日志同时包含机场节点与 VPS 的握手，不能混用 Authentication true/false。
+5. 服务端自环成功不代表远端 Mihomo 配置正确，也不能据此认定机场篡改。
+6. KiwiVM basic shell 每次只提交一条命令。多行粘贴会拼接，不能替代逐条执行。
+
+完整证据与备份位置见 docs/2026-11-11-PEIQIAN-DIAGNOSIS.md。

@@ -1,101 +1,66 @@
-# 部署问题全记录（2026-10-01 实战排查日志）
+# 部署与排障记录
 
-## 2026-11-11（傍晚）：重装后服务端重建实录 —— 22 入站疑被 BWH 掐、443 跳板链 SSH、Reality 认证三连排查
+## 当前结论：2026-11-11 赔钱机场链路已恢复
 
-上一条遗留的待办「Xray 随重装消失」本轮完成。**结论先行**：服务端 + 客户端参数全部正确且已互验，
-ChatGPT 链路恢复只差「机场节点→VPS」对 Reality 握手干扰的窗口期结束（10-28 已知波动现象）。
+当前主用路径是赔钱机场 AWS日本01 → VPS:8443 Reality → ChatGPT。
+修复了安装覆写未同步、端口/协议错配以及 ML-KEM 握手选项缺失；
+正式入口连续 5 次 trace 返回 `ip=104.129.181.52`，SSH 直连 22 已恢复。
 
-1. **SSH 通道重建（新发现：22 入站拿不到 banner，443 正常）**
-   - 网页 Root shell（basic 表单式）注入新公钥 `~/.ssh/vps_reinstall`(ed25519)：171 字符 echo
-     完整送达（表单提交不像交互终端丢字符），两端 md5sum 核对一致
-   - 机器内 sshd 监听 22 正常、iptables INPUT 空、无 ufw、出网正常——但经机场节点连 22 拿不到
-     SSH banner；443 上临时 `/usr/sbin/sshd -p 443` 立刻拿到 → 22 入站在 BWH 边缘被过滤
-     （滥用机器的处置？）。IP 被 GFW 封的国内直连两端口都不通，SSH 只能走：机场→VPS:443
-   - 标准命令（Git Bash 自带 connect.exe 走 mihomo 7890）：
-     `ssh -i ~/.ssh/vps_reinstall -p 443 -o ProxyCommand="/mingw64/bin/connect -H 127.0.0.1:7890 %h %p" root@104.129.181.52`
-     前提：出口组指向可达 VPS 的节点（**AWS日本01 可达；美国圣何塞01-0.1倍 不可达**——当天
-     出口恰好是圣何塞，白白排查一轮）
-2. **部署**：SSH 通后 `ssh ... 'bash -s' < 部署脚本` 一气呵成：装 Xray 26.11.9 → 写配置 →
-   sshd 禁密码 → 关 atd。凭据策略：**沿用旧 UUID/short-id + 服务端 `xray x25519` 原生新密钥对**
-   （客户端只需改 public-key 一处）。注意：下午会话已建更强防火墙 `smtp-block.service`（双向+2525），
-   本轮误建旧名 block-smtp-out 已删除去重。
-3. **连环坑 A**：官方安装器装完**立刻启动** xray（空配置），之后写入的配置不重启不生效——
-   `systemctl is-active xray` = active 但 443 无监听。**is-active ≠ 配置已加载，必须 ss -tln 验证**。
-4. **连环坑 B**：`pkill -f "sshd -p 443"` 把执行它的 bash 自己也杀了（cmdline 含同样字符串），
-   后续 systemctl 静默未跑。就是本文「小坑收集」第一条，拼命令时又踩一遍；用 `"44[3]"` 括号技巧。
-5. **Reality 认证三连排查**（自环终审法再立功）：
-   - ① mihomo 管道日志 `GET /logs?level=debug`：`REALITY Authentication: false`
-   - ② Node 经 mihomo CONNECT 隧道对 VPS:443 发 SNI=lovelive 的普通 TLS：**成功拿到
-     `CN=*.lovelive-anime.jp` 证书** → xray 活着、回源转发正常（Reality 对未认证连接的行为），
-     问题锁定在认证环节
-   - ③ 服务端自环（xray 客户端连 127.0.0.1:443 + curl socks5）→ **返回 104.129.181.52** →
-     两端参数 100% 正确；本地仍 auth failed = 机场节点→VPS 链路干扰（与 10-28 同现象）
-   - 附注：本地 Node crypto 生成的 X25519 密钥对（base64url 定长正确）也出现过认证异常，
-     **统一改用服务端 `xray x25519` 原生输出后两端即配对**。Xray 26.x 的 x25519 输出新增
-     `Password (PublicKey)`/`Hash32` 字段（新版密码认证模式），pbk 字段用 PublicKey 值不变。
-6. **mihomo 运维**：改 override 公钥后 `taskkill //IM mihomo.exe //F`，Clash Party 自动拉起
-   （管道名不变），`grep 新公钥 work/config.yaml` 验证重算完成。
+操作、对照实验与备份见 [完整修复记录](2026-11-11-PEIQIAN-DIAGNOSIS.md)，
+当前参数与复查命令见 [README](../README.md)。
 
-**重建后凭据**（node-info.txt 已全量更新）：UUID/short-id 沿用旧值；
-Public Key = `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE`；override 双副本已同步。
+下方为历史事件记录。旧测试中的端口、节点名、文件路径与状态只适用于各自测试时点，
+不覆盖上面的实机复核结果。2026-11-11 旧记录有相互冲突的时段标签，以实际配置和验证证据为准。
 
-**重装后必做清单**（下次照此执行）：装 xray → 写配置 → **重启并 ss -tln 验证监听** →
-确认 smtp-block enabled → 注入新公钥 + sshd 禁密码 → atd 禁用 → 客户端换 pbk → 重启 mihomo →
-自环测试终审。
+## 2026-11-11 重建与误判复盘
 
-### 追记（当晚 20:00+）：机场间歇性 anti-Reality 干扰——重建完成后链路仍未全通的原因
+### 服务与 SSH
 
-两端全部就位后 VPS-ChatGPT 仍间歇 503，深挖结论：**机场对「节点→VPS:443 的 Reality 握手」
-做订阅级、概率性篡改**（改写 ClientHello 内认证字段，普通 TLS 不受影响）。证据链：
+- 重装后部署 Xray 26.11.9，沿用 UUID/short-id，生成了新的 Reality 密钥对。
+  当前实际入站为 **8443 Reality + 443 HTTPUpgrade**。
+- 旧记录曾因经机场连 22 没拿到 SSH banner、临时 443 SSH 可用，就推断“BWH 边缘封锁 22”。
+  该对照不足以确认过滤方；本次本机直连 22 成功，不需要占用 Xray 的 443 端口。
+- 旧记录中的 `~/.ssh/vps_reinstall` 并非当前电脑使用的密钥；本次恢复的是
+  `~/.ssh/vps_chatgpt`。先通过已登录控制台确认重装后的主机指纹，再更新 known_hosts 和公钥授权。
+- 安装器可能先启动空配置。后写配置需要校验并重启；`systemctl is-active xray` 为 active
+  不等于入站已加载，应结合 `ss -lntp`、进程启动时间和配置修改时间核对。
+- 旧记录提到 `pkill -f "sshd -p 443"` 匹配到了执行命令的 shell，导致后续重启未执行。
+  优先操作已确认的 PID 或 systemd 服务，避免宽泛进程匹配。
 
-- 服务端 journal：`REALITY: processed invalid connection from 3.112.24.243(AWS东京): authentication
-  failed`（ClientHello 已到达、认证被破坏）；同参数自环 100% 通过
-- 排除实验全做了：指纹 chrome/firefox/safari ×3、SNI lovelive/samsung ×2、密钥对 ×2、
-  订阅内节点 ×11（AWS东京/新加坡、专线、hy2、台湾）——全部同样失败 → 与客户端参数无关
-- **间歇性**：同一分钟内日志 `Authentication: true/false` 交替出现，true 窗口期 ChatGPT.exe
-  的连接成功经 VPS 转发（mihomo 日志 `using VPS-ChatGPT` 无 error）→ 干扰按连接随机，
-  已建立的长连接不受影响
-- 排测中试过 httpupgrade 传输整配置切换（两端），未及验证（mihomo 重启竞态）即因机场
-  true 窗口出现而回滚 Reality——该方案保留为后备（配置在 git 历史的本文档 commit 里）
+### 撤回“机场随机篡改/反二级代理”的归因
 
-**应对**：保持两端 Reality 配置就位（一通即恢复，ChatGPT.exe 自动重连）+ 后台循环轮换
-VPS-Hop 节点重试（命中即停）。机场这类干扰是波次性的（10-28 同类现象当天自愈）。
-若持续数日不恢复：考虑 httpupgrade/xhttp 传输迁移，或 KiwiVM 免费换机房换 IP
-（顺带解决 GFW 封锁，DNS/客户端用 update-ip.sh 批量换）。
+历史排查记录包括：认证日志 true/false 交替、切换多个指纹/SNI/密钥/节点仍失败、
+普通 TLS 能拿到伪装站证书、自环成功，以及 HTTPUpgrade CONNECT 后数据阶段超时。
+这些现象都不足以证明机场修改了 ClientHello 或将 VPS 加入代理黑名单：
 
-**当晚 web shell 传输翻车记录**（重要教训）：base64 分段传配置多次被吃字符（`echo` 变
-`woecho`、chunk 头 2 字符丢失、引号 EOF），导致 config.json 损坏 xray 起不来——**长内容
-不要走 KiwiVM 网页 shell，临时 sshd 挂 443 后走 SSH 流式传输**（cat > file 二进制安全，
-本轮最终就是靠这条修好的）。基础 shell 只适合 <100 字符的短命令。
+1. 外层机场节点本身也使用 Reality，必须分清日志对应哪一跳；`using VPS-ChatGPT`
+   只说明选择了该出站，不能代替目标响应和出口验证。
+2. 服务端自环只验证所用本机客户端路径，不能证明远端 Mihomo 参数和握手兼容性。
+3. 普通 TLS 可能走 Reality 对未认证连接的转发路径，不验证 VLESS/Reality 认证。
+4. 更换多个候选参数不等于覆盖了所有变量。本次同一跳板、正确参数下，
+   仅开启 `support-x25519mlkem768` 就使认证和端到端请求成功。
+5. CONNECT 200 和没有 error 日志不证明上游协议成功，更不能据超时断言流量被静默丢弃。
+   本次隔离测试还验证了 443 HTTPUpgrade 可用。
 
-### 深夜追记（23:00+）：8443 端口与 httpupgrade 实验 —— 干扰是协议无关的，定性为机场反二级代理
+远端历史提交 `d5425f9` 增加的“深夜定案”及“8443 成功率两三成”没有说明如何区分外层/内层认证，
+也未提供可复现的抽样依据，不作为当前结论。保留其部署事实：服务端改为双入站，
+8443 为 Reality、443 为 HTTPUpgrade；本轮恢复沿用这一配置。
+等待窗口、循环轮换节点、迁移或换机场都不是本次已确认的修复步骤。
 
-用户 ChatGPT 仍连不上，继续打完最后两张牌：
+旧记录声称仓库与安装覆写已同步，本次发现实际安装副本仍含旧公钥且没有跳板。
+因此必须检查**实际加载副本**，不能只看仓库。
+曾怀疑 Node crypto 生成的密钥无效，但没有充分对照证据；检查方法是在服务端从私钥派生公钥，
+与客户端核对，不需把私钥传回本机或再次换钥。
 
-1. **8443 端口跑 Reality**（假设机场检测只盯 443）：服务端双 inbound 部署（8443 Reality + 443 httpupgrade
-   备用），客户端切 8443 → **认证成功窗口真实存在**（曾连续三条 `Authentication: true`，且 ChatGPT.exe
-   流量成功经 VPS 转发），但成功率仅约 2-3 成且**波次性**（一段集中 true 一段集中 false，6 连测全落
-   false 窗口）。
-2. **443 跑 httpupgrade**（无 Reality 认证环节，特征为普通 HTTP Upgrade）：隧道能建立、mihomo 无任何
-   error 日志，但**数据被静默丢弃**（curl schannel 握手无响应）——干扰不挑协议。
+### 网页终端与重建顺序
 
-**最终定性**：机场在「其节点 → 本 VPS IP」的出站方向做**协议无关、逐连接随机的流量破坏**。最合理解释
-是反二级代理措施——该 IP 被 GFW 封过、在各类代理 IP 黑名单中，机场识别后不允许经它中转连接。
-（旁证：干扰只影响去 VPS 的流量，机场其他出口流量正常。）
+KiwiVM basic shell 曾发生多行命令拼接、字符缺失，导致公钥未写入或配置损坏。
+每次提交一条命令并核对效果，恢复 SSH 后再传输长文件。旧流程临时停 Xray、将 sshd 放到 443
+只是当时的应急方式，当前无需使用；“少于 100 字符一定安全”也没有保证。
 
-**当晚 web shell 彻底劣化**：连短命令都开始丢/插字符（`sed`→`ased`、`echo`→`woecho`、引号随机吃掉
-半条命令），最终可靠通道定型为：**`pkill xray` 腾出 443 → `/usr/sbin/sshd -p 443`（必须绝对路径，
-裸 `sshd` 报 re-exec 错误）→ 本地 SSH 流式传配置 → 命令内 `pkill "sshd -p 44[3]"` + `systemctl
-restart xray` 一步收尾**。双端口配置就是经这条通道部署成功的（`Configuration OK` + 双监听）。
-
-**留给用户的三个决策选项**（已当面交付）：
-1. 等机场波次窗口（后台循环每 2.5min 重试三节点、命中即停；ChatGPT.exe 自动重连，true 窗口期能用）
-2. **KiWiVM 免费换机房换新 IP**（推荐）：同时解决 GFW 封锁（dialer-proxy 可退役）+ 脱离代理黑名单；
-   换后重部署半小时（流程见本文+node-info）。风险：新 IP 也被机场盯上的概率存在但应低得多
-3. 换/加第二家机场订阅验证是否全局策略
-
-**当前挂机状态**：服务端 8443 Reality + 443 httpupgrade 双端口常驻（一个 xray 双 inbound），
-客户端指向 8443（最优解），override/git 已同步此状态。
+重建时：恢复可信 SSH → 备份/生成配置 → Xray 配置校验 → 重启并查监听 →
+恢复所需 SMTP 防火墙和 SSH 加固 → 同步所有客户端副本 → 触发运行配置重建 →
+**从实际机场路径验证 ChatGPT 出口**。自环可辅助定位，但不能充当最终验收。
 
 ---
 
@@ -129,15 +94,13 @@ restart xray` 一步收尾**。双端口配置就是经这条通道部署成功�
 `systemctl is-enabled smtp-block.service` = enabled（symlink 已创建）；面板显示
 "KiwiVM panel password has been changed successfully"。
 
-**遗留 / 待办**：
-- ⚠️ **Xray（vless+reality:443）随重装消失，ChatGPT/Codex 链路（VPS-ChatGPT 节点）当前不可用**。
-  恢复：SSH 登录重跑 `server-setup.sh`（README「重装系统」节）。注意脚本每次**生成全新 UUID + Reality 密钥对**，
-  旧 Reality **私钥从未备份**（客户端与 README 只有公钥，无法复用）→ 部署后必须把脚本输出的新 VLESS URL
-  同步 4 处：README 关键信息卡、`client/clash-party-override.js`（及生效副本
-  `E:\clash party\data\override\vpschatgpt01.js`）、`client/boostnet-chain/` 配置、`~/.ssh` 不受影响无需动
+**当时遗留事项（Xray 与 SSH 已在后续恢复，非当前待办）**：
+- Xray 随重装消失；现已重建为 8443 Reality + 443 HTTPUpgrade，见文首。
+  初始化脚本会生成新 UUID/密钥/short-id 并覆盖配置，不能当作无损修复；当前部署说明以 README 为准。
+  重装也会更换 SSH 主机密钥并清空服务器公钥授权，本机密钥文件尚在不代表无需恢复登录。
 - SSH 加固重做：Root shell 把自己的公钥追加回 `/root/.ssh/authorized_keys`（旧的别信）→ `passwd` 换掉临时
   密码 → 恢复 publickey-only 登录
-- abuse 年内累计 200/1300，剩余容错不多；新防火墙双向+2525 且系统是干净盘。再有滥用告警：别排查，直接重装
+- abuse 当时累计 200/1300。再次告警应先保存证据并隔离风险；确认 root 失陷后重建可信系统、轮换凭据并调查入口。
 - 运维：KiwiVM 网页全流程（解封 / 重装 / Root shell / 改面板密码）可无人值守操作；Root shell – basic
   长命令仍要控制长度（本轮 printf 写 unit 成功，但超长命令有丢字符风险，可拆两条）
 
@@ -208,7 +171,7 @@ martinfowler.com / ping.mcp.so / aif.runwayml.com 等正规域名，STARTTLS 后
 - 运维知识：SSH 坏掉时用面板左侧 **Root shell – basic**（网页 root 终端，无需密码）；
   该会话**几分钟不动就超时重置**，命令要短、分批连发
 
-**复贴：block-smtp-out.service 全文**（重装后照抄重建，`systemctl daemon-reload && systemctl enable --now block-smtp-out`）：
+**旧版 block-smtp-out.service（仅历史记录）**：已由上方 `smtp-block.service` 替代，不要重复部署旧 unit。
 
 ```ini
 [Unit]
@@ -230,7 +193,7 @@ WantedBy=multi-user.target
 
 **教训**：
 - 重启只解封不除根；定时唤醒型恶意程序要查 **at 队列**（`atq`），光看 cron/systemd 会漏
-- 服务器只收 publickey + 本机钥匙全部被拒 = 第一反应应该是 authorized_keys 被换，而不是重置密码
+- 公钥被拒先查是否选错本机密钥、远端授权是否丢失、权限或 sshd 策略是否变化；单凭拒绝登录不能认定入侵。
 - 网页终端操作长命令会被丢字符，长内容拆成多条短命令逐行执行
 
 ---
@@ -239,10 +202,10 @@ WantedBy=multi-user.target
 
 **现象**：VPN 完全正常（google 204、机场出口正常），但 chatgpt.com/auth.openai.com/api.openai.com
 全部 TLS 握手挂死（7890 CONNECT 200 建立后 schannel "failed to receive handshake"）。企业 DNS 对
-chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，但与本案无关（走代理由远端解析）。
+chatgpt.com 返回异常地址（69.63.176.143 / face:b00c）；是否影响请求需看域名在哪里解析，不能仅凭开启代理就排除 DNS。
 
 **定位**：
-- check-host.net 5 国节点测 VPS 443 全通（94-212ms）→ 服务端无恙
+- check-host.net 5 国节点测 VPS 443 全通（94-212ms）→ 这些路径 TCP 可达，不能证明 Reality 认证或目标访问正常
 - Clash Party 内核经命名管道 API 测 `VPS-ChatGPT` 端到端 delay = **503**
 - 逐跳板扫描（切 节点选择→测 VPS，15 个）：美国圣何塞/洛杉矶全系、美国01|下载、日本东京06、♻️自动选择
   → 503；**AWS日本01、美国01-0.1倍、新加坡hy2、台湾、日本节点组(199ms)、狮城组(244ms) → 200**
@@ -253,15 +216,15 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 **修复**：override v3（`client/clash-party-override.js` + `E:\clash party\data\override\vpschatgpt01.js` 同步）
 注入专用 **`VPS-Hop` select 组**：成员按正则从当前订阅过滤（AWS日本01 优先=默认、美国01-0.1倍、新加坡hy2、
 台湾×3、日本节点/狮城节点组，兜底主选择组→DIRECT），`VPS-ChatGPT` 的 dialer-proxy 固定指 VPS-Hop，
-主选择组与 ChatGPT 链路彻底解耦。
+选独立节点时主选择组与 ChatGPT 链路解耦；选择兜底主组或自动组时仍受其选择影响。
 - 离线验证：node vm 以真实订阅执行覆写 + 真实内核 `mihomo -t` → test is successful
 - 生效：taskkill mihomo.exe（GUI 2 秒自动拉起，管道名不变）
 - 回归：主选切回肇事节点后 trace 仍 `ip=104.129.181.52 colo=YVR`（delay 212ms）；普通流量出口 NRT 机场 IP
 
 **运维**：
-- ChatGPT 断链先跑：`MI_PIPE=<当前管道> node .diag-mihomo.cjs node VPS-ChatGPT`（503=跳板问题），
+- ChatGPT 断链先跑：`MI_PIPE=<当前管道> node .diag-mihomo.cjs node VPS-ChatGPT`（Git Bash 语法；503 仅代表测试失败，不能独自定位跳板），
   换跳板：`node .diag-mihomo.cjs switch <节点名> VPS-Hop`
-- 当前管道名：`wmic process where "name='mihomo.exe'" get CommandLine` 的 `-ext-ctl-pipe` 值
+- 当前管道名：`Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" | Select-Object CommandLine` 的 `-ext-ctl-pipe` 值
   （含 GUI PID，重启 GUI 才变，重启内核不变）
 - `.diag-mihomo.cjs` 本轮升级：`MI_PIPE` 环境变量传管道、新增 `now`/`raw`/`vspscan` 命令、`switch` 支持组名
 
@@ -301,7 +264,7 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 | 7899 → api.openai.com/cdn-cgi/trace | `104.129.181.52` colo=YVR | Codex proxy-fallback ✅ |
 
 **教训**：
-- "CONNECT 建立成功但数据挂死"= 跳板到 VPS 的 Reality 握手被掐（与 41 节点实测中 JP 系症状一致），先换跳板再查别的
+- CONNECT 成功只表示本地代理接受隧道请求；数据阶段超时还要查上游拨号、协议/认证、回源和目标响应，不能直接断言握手被掐。
 - 挖 Flutter AOT（app.so）字符串：中文是 **UTF-16LE** 存储，grep UTF-8 永远搜不到；拉丁标识符才是单字节
 - BoostNet 客户端零配置可改（配置全加密 enc1:），它自带的链式代理/落地功能是全局的，做不了按域名分流——按域名分流只能靠外置 mihomo
 
@@ -322,8 +285,9 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 
 **关键发现（41 节点全量实测，端到端 Reality 握手 + trace 验证）**：BoostNet 各节点到 VPS 443 连通性**不均匀**——
 香港HK1-4/6-12、台湾TW1-4、新加坡SG1-8、美国US1-4、英国/马来/阿根廷/澳洲 全通；**日本JP1/3/4/7/8、香港HK5、
-土耳其TR 到 VPS 不通**（CONNECT 挂死；JP1 到 22 端口 TCP 通但 SSH kex 阶段被掐）。VPS 本身全球可达
-（check-host.net 瑞/意/波/土/乌 5/5 OK）。**当时客户端选的正是日本JP1**——这就是"链路时好时坏"的根因。
+土耳其TR 到 VPS 测试失败**（CONNECT 后超时；JP1 到 22 端口 TCP 通但 SSH kex 未完成）。
+check-host.net 瑞/意/波/土/乌 5/5 TCP 可达，不能代替协议验证。**当时客户端选的是日本JP1**；
+切换跳板后恢复支持路径差异的判断，不足以认定具体干扰机制。
 
 **验证**（2026-10-28 16:0x，全过）：
 | 路径 | 出口 | 结论 |
@@ -372,7 +336,7 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 - 旧脚本 + 新机场订阅 → `dialer-proxy [BoostNet] not found`，失败（复现）
 - 新脚本 + 新机场订阅 → dialer-proxy=`节点选择`，test is successful
 - 新脚本 + BoostNet 订阅 → dialer-proxy=`BoostNet`，行为不变，test is successful
-- 覆写脚本每次导入/生成配置时从磁盘实时读取（源码 `applyOverrides → getOverride → readFile`），改完即生效无需重启
+- 覆写在导入/重新生成配置时从磁盘读取；外部编辑后还需触发重新生成，并核对运行配置。不能把“生成时读磁盘”理解为“编辑后自动生效”。
 
 **教训**：
 - 全局覆写里任何对订阅内容的引用（组名/节点名）都会把"换机场订阅"变成炸点；引用必须动态解析 + 兜底，不能硬编码
@@ -383,15 +347,15 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 
 ---
 
-## 2026-10-26（下午）：IP 第二次被 GFW 封锁 → dialer-proxy 经机场链式绕行
+## 2026-10-26（下午）：直连路径失败 → dialer-proxy 经机场链式绕行
 
 **现象**：当天 10:13 起 ChatGPT 走 VPS 开始间歇性失败（上午刚做完路由修复、11:05 验证通过），16:38 后完全中断，全天 mihomo 日志 3473 次 `dial tcp 104.129.181.52:443: i/o timeout`。
 
 **定位**（分层证据）：
-- KiwiVM 面板：VM Running、负载 0.00、流量/磁盘/内存正常 → 服务端无恙
-- check-host.net 全球 8 节点（含美/越/欧）测 443 **全部连通** → VPS 全球可达
-- 本机：TCP 22/443 双双超时，但 **ICMP ping 通**（179ms）→ GFW 针对 IP 的 TCP 级封锁（与 10-01 Fremont 那次同类，本次更彻底连 22 也断）
-- 对照组：apple/github 直连、机场节点端口（mid1.myzxdy.top:40200-40202）、apple 经 7890 走机场全部正常 → 本机网络/Clash/机场无关
+- KiwiVM 面板：VM Running、负载 0.00、流量/磁盘/内存正常 → VM 在运行，代理服务仍需单独检查
+- check-host.net 全球 8 节点（含美/越/欧）测 443 **全部连通** → 所测路径 TCP 可达
+- 本机：TCP 22/443 双双超时，但 **ICMP ping 通**（179ms）→ 当时本机到这两个端口的 TCP 路径异常；不能仅凭此定位过滤方或断言整 IP 被封。
+- 对照组：apple/github 直连、机场节点端口（mid1.myzxdy.top:40200-40202）、apple 经 7890 走机场正常 → 普通出网可用，仍需核对专用 VPS 路由
 
 **尝试迁移换 IP**：面板选了 USCA_2（洛杉矶 DC2 AO，截图视觉确认单选框勾选后才确认），点 Start Migration 后报
 `Migration backend is currently not available for this VPS. Please try again in 10-15 minutes. (Reference code: 734152)`
@@ -404,14 +368,13 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 **验证**（2026-10-26 18:03）：7890 → chatgpt.com trace = 104.129.181.52；7899（proxy-fallback/Codex 路径）→ api.openai.com trace = 104.129.181.52；
 重启后日志 18:02:35 起 VPS 连接零报错。
 
-**恢复直连**：KiwiVM 迁移后端恢复后执行 Migrate to another DC 换新 IP → 跑 `backups/20261026-gfw-migration/update-ip.sh <新IP>` →
-删除 override 里的 dialer-proxy（2026-10-28 起为动态解析：删掉 `dialerProxy` 解析块和
-`...(dialerProxy ? ...)` 一行即可）→ 重启 Clash Party。
+**后续考虑直连时**：先验证当前直连协议路径。若另行迁移，应核对面板条件并同步新 IP；旧迁移脚本的路径需复核。
+当前覆写使用 `VPS-Hop`，旧 `dialerProxy` 代码已不适用；验证后再决定是否移除 `dialer-proxy`。
 
 **顺带确认的事实**：
 - VM 物理机房是 **CA Vancouver (CABC_1)**（面板 Physical Location + trace colo=YVR 双重印证；README 原记录"洛杉矶 USCA_2"已过时，IP 从未变过，疑为搬瓦工侧机房调整）
 - 本机 `~/.ssh/config` 原先是空的、`~/.ssh/vps_chatgpt` 密钥不存在（与文档声明不符）；实际可用密钥是 `~/.ssh/id_rsa`（known_hosts 有 10-01 部署当天的记录）。已补 vps-chatgpt 条目，迁移换 IP 后记得同步 HostName
-- 诊断技巧：`bash -c 'cat < /dev/null > /dev/tcp/<IP>/443'` 测 TCP、ping 对照 ICMP、check-host.net 外测——三步即可区分"本机问题/机场问题/IP 被墙/服务端宕机"
+- 诊断技巧：TCP、ICMP 和外部测点对照可以缩小路径范围；还需验证监听协议、认证和目标请求，不能三步直接认定故障方。
 
 ---
 
@@ -463,53 +426,44 @@ chatgpt.com 返回 Facebook IP（69.63.176.143 / face:b00c）= 典型污染，�
 
 ---
 
-## 问题 2：首个 IP 被墙（176.122.138.204，Fremont）
+## 问题 2：首个 IP 的代理路径失败（176.122.138.204，Fremont）
 
-**现象**：代理连接失败，客户端日志 `dialing TCP ... EOF`，换端口 8443 无效；但 SSH(22) 正常。
+2026-10-01 记录：TCP 握手与 ClientHello 到达服务端，服务端发回数据，
+客户端收到 reset；443/8443 测试失败而 SSH 22 正常。迁移后使用了 `104.129.181.52`。
 
-**定位过程**（教科书级排查链，值得复用）：
-1. **服务端抓包**（`tcpdump -ni any port 443`）：
-   - TCP 三次握手完成 ✅
-   - 客户端 ClientHello（1728B）到达服务器 ✅
-   - 服务器从微软取回证书并**成功回发 9408B 给客户端** ✅
-   - 服务端日志：`accepted tcp:api.ipify.org:443 [direct]`——请求已被服务器接收并转发 ✅
-   - 抓包中服务器从未发 RST，但客户端侧收到 reset
-   → **结论：去程通、回程被中间设备掐断 = IP 被 GFW 针对性阻断**
-2. **换端口对照**：443 → 8443 同样死 → 排除端口封锁，锁定 IP 级
-3. SSH 22 端口一直正常 → 不是整机不通，是 IP:代理流量特征被标记
+这支持“路径或协议相关异常”的怀疑，但单侧抓包和两个端口测试不能锁定 GFW、整 IP 封锁或具体运营方。
+需要两端抓包和相同条件的协议对照。历史迁移结果也不保证以后换 IP 必然有效或免费。
 
-**解法**：搬瓦工 KiwiVM 面板 **Migrate to another datacenter**（免费、保留数据、获得新 IP）。Fremont → 洛杉矶 USCA_2，新 IP `104.129.181.52`。
-
-**验证 IP 是否被墙的快捷方法**：
-```bash
-curl -sv --resolve www.microsoft.com:443:<IP> https://www.microsoft.com
-# 能出 200 = TLS 路径通；连不上/被reset = 该 IP 的 443 已被墙
-```
+普通 HTTPS 探测只有在实际入站支持该 TLS/SNI 时才有解释价值：
+成功可能只是 Reality 的未认证转发，不能证明 VLESS 可用；
+失败可能是端口、SNI、协议、服务状态或路径问题，不能直接叫作“IP 被墙”。
+当前 443 是无 TLS 的 HTTPUpgrade，不能套用旧的 HTTPS:443 探测命令。
 
 ---
 
-## 问题 3：Reality 握手秒失败 —— 伪装目标启用了抗量子 TLS（最难的一个）
+## 问题 3：Reality 握手失败与 ML-KEM 兼容性
 
-**现象**：换了新 IP 后依然连不上。且出现**矛盾证据**：
-- 普通 HTTPS（curl 直连 IP、SNI=microsoft）→ 200 正常
-- xray 客户端（任意指纹：chrome/firefox/safari/ios/random）→ 握手阶段 EOF
-- 服务器**自己连自己（自环）都失败**
+2026-10-01 的记录是：普通 TLS 可用，Xray 自环认证失败，换目标为
+`www.lovelive-anime.jp` 后测试成功。旧文把它解释成“启用 ML-KEM 的网站必然不兼容 Reality”，
+证据不足，现撤回这一通用结论；不应按微软、苹果、谷歌等域名归属禁用目标。
 
-**定位过程**：
-1. 指纹矩阵测试全灭 → 排除 uTLS 指纹被识别
-2. 核对密钥：`xray x25519 -i <服务器私钥>` 反推公钥 = 客户端公钥 ✅；UUID/shortId/SNI/时钟全部一致 → 排除配置错误
-3. 服务器自环测试（服务器上跑 xray 客户端连本机 443）也失败 → **排除一切网络因素（GFW/线路/防火墙），问题在服务端本身**
-4. 服务端 debug 日志：`REALITY: processed invalid connection ... handshake did not complete successfully`
-   → 服务器没认出客户端的认证，把它当陌生访客转发给伪装站了
-5. **根因**：伪装目标 `www.microsoft.com` 已启用 **X25519MLKEM768 抗量子密钥交换**（微软/苹果/谷歌/亚马逊等大 CDN 陆续开启），Reality 的认证推导依赖普通 X25519，算法不匹配导致认证必然失败
+本次 2026-11-11 的可复现结果恰好说明客户端握手选项需要核对：
+Xray 26.11.9 + Mihomo 1.19.32、chrome 指纹、正确 8443/公钥/short-id 下，
+开启 `reality-opts.support-x25519mlkem768: true` 后同一路径恢复。
+参见 [Mihomo TLS 文档](https://wiki.metacubex.one/config/proxies/tls/#reality-optssupport-x25519mlkem768)
+和 [本轮对照实验](2026-11-11-PEIQIAN-DIAGNOSIS.md)。
 
-**解法**：换未启用 MLKEM 的伪装站。写了自动筛选脚本 `F:\vps\deploy\desttest.sh`：逐个候选站自环实测，第一个通过的是 `www.lovelive-anime.jp`（备选：www.samsung.com、www.nvidia.com 等）。
+排查时核对实际入站端口与协议、UUID/flow、公钥/short-id、SNI、时钟、指纹及版本兼容性。
+公钥可在服务器用现有私钥派生校验，不要把私钥复制到客户端或日志中。
+指纹矩阵失败不能排除所有握手兼容性问题。
 
-**自环测试法**（诊断 Reality 服务端问题的杀手锏）：
-```bash
-# 在服务器上写一个 vless 客户端配置指向 127.0.0.1:443，跑起来 curl 测试
-# 通 = 服务端配置完好，问题在网络路径；不通 = 服务端问题（配置/密钥/伪装站）
-```
+自环测试是在服务器上运行客户端连接本机 Reality 入站（当前 8443），再通过它请求目标：
+通过只证明这份本机客户端配置可用，不证明远端 Mihomo 同样可用；
+失败仍可能涉及配置、DNS、回源目标、服务端出网或本机防火墙。
+它排除了远端到 VPS 的一段路径，**没有排除全部网络因素**。
+
+`deploy/desttest.sh` 依赖预建的 `/tmp/selftest.json`，假定首个入站为 Reality，
+会改写正式配置并反复重启服务。它是历史实验脚本，须核对当前双入站并备份后才考虑使用。
 
 ---
 
@@ -534,14 +488,14 @@ curl -sv --resolve www.microsoft.com:443:<IP> https://www.microsoft.com
 - JS 覆写要求：导出 `function main(config)`，返回 config；连字符键一律加引号
 
 **2026-10-08 补充（新版 Clash Party，E:\clash party 便携版实测）**：
-- **外部改 override.yaml 不会热生效**：新版源码只在内核启动/订阅导入更新时才读 override.yaml 并重算配置，
-  对 override 目录和 override.yaml 均无文件监听。手动放文件+改注册表后，必须**重启 Clash Party**
-  （或内核）才生效。验证标志：`data/work/config.yaml` 的修改时间刷新且含 `VPS-ChatGPT`。
+- **外部编辑不等于运行配置更新**：需触发配置重新生成。2026-11-11 界面切换订阅/覆写开关即可生效；
+  如没有更新，再重启对应内核或客户端。验证标志不只是时间戳，还要核对运行节点的端口、公钥、ML-KEM 与跳板。
 - 数据目录不固定在 %APPDATA%，**以 mihomo.exe 命令行 `-d` 参数为准**
-   （`wmic process where "name='mihomo.exe'" get CommandLine` → `E:\clash party\data\work`）。
+   （PowerShell：`Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" | Select-Object CommandLine`）。
 - 覆写日志 `<id>.log` 出现 `脚本执行成功` 仅代表 JS 跑通，还需看 work/config.yaml 是否真的注入。
 - 验证分流时注意：若终端设了 `HTTP_PROXY/HTTPS_PROXY` 环境变量（本机有别的代理占 7899），
-  curl 加 `--noproxy "*"` 会**连 `-x` 一起屏蔽**导致直连测试、结论全错——只加 `-x http://127.0.0.1:7890` 即可（显式 -x 优先于环境变量）。
+  curl 加 `--noproxy "*"` 会**绕过显式代理**。测试时用 `curl.exe --noproxy "" --proxy http://127.0.0.1:7890 ...`，
+  清空绕过列表，避免继承 NO_PROXY 影响结果。
 
 ---
 
@@ -551,18 +505,18 @@ curl -sv --resolve www.microsoft.com:443:<IP> https://www.microsoft.com
 |---|---|
 | `pkill -f "xxx"` 把当前 SSH 会话自己杀了（命令行里含同样字符串） | 用 `kill $PID` 或括号技巧 `pkill -f "xx[x]"` |
 | Windows 原生 Python 读不了 Git Bash 的 `/tmp` 路径 | 用 `cat file \| python -c` 管道，或 `cygpath -w` 转换 |
-| Git Bash 里中文输出乱码（GBK vs UTF-8） | 不影响数据本身，看结果不看中文 |
+| Git Bash 里中文输出乱码（GBK vs UTF-8） | 统一编码并核对文件内容；含中文的节点名必须逐字匹配，不能忽略乱码 |
 | WebFetch/数据中心 IP 被目标站屏蔽 | 本地 `curl -x http://127.0.0.1:7890`（走用户自己的代理） |
 | Windows curl 走不了系统代理 | 显式 `-x` 指定，socks 用 `--socks5-hostname`（远程解析域名） |
-| ssh-copy-id 之后的首次 ssh 报 Host key verification | 首次加 `-o StrictHostKeyChecking=accept-new` |
-| GitHub SSH 22 被 GFW reset（push/pull 全挂，Connection reset by 20.205.243.166） | `~/.ssh/config` 的 `Host github.com` 块：HostName 改 `ssh.github.com` + 加 `Port 443`，密钥不变，2026-10-28 实测 |
+| SSH 报主机指纹变化或验证失败 | 在可信控制台核对指纹后更新 known_hosts；accept-new 不会接受已知主机的新指纹，也不能代替核对 |
+| GitHub SSH 22 被 reset（push/pull 失败，不能仅凭 reset 确认过滤方） | 历史有效方式：`Host github.com` 下使用 `HostName ssh.github.com`、`Port 443`，正常核对主机指纹，2026-10-28 实测 |
 
 ---
 
 ## 可复用的诊断思路总结
 
 1. **分层隔离**：客户端 → 网络去程 → 服务端 → 伪装站 → 回程，逐层找证据
-2. **服务端抓包**永远说实话（tcpdump），比客户端日志可靠
-3. **自环测试**剥离全部网络因素，专测服务端配置
-4. **差异测试**：同一条路换流量形态（普通 HTTPS vs 代理握手），锁定"内容检测"还是"IP 封锁"
+2. **两端证据**：抓包、监听、配置与客户端日志相互印证；注意采集点和漏包限制
+3. **自环测试**隔离远端到 VPS 的路径，但仍依赖本机配置与服务端出网
+4. **单变量对照**：固定路径与版本，一次改变一个参数；普通 TLS、TCP 可达与完整代理请求分别验证
 5. **对照源码**：GUI 程序的配置格式不确定时，直接看上游源码（本例 clash-party 的 override 机制）

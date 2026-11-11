@@ -1,5 +1,7 @@
 #!/bin/bash
 # 逐个候选 dest 自环测试 Reality 握手，找到第一个可用的
+# 历史实验脚本：会修改正式配置并多次重启 Xray，依赖已有 /tmp/selftest.json 与 1080 自环入口。
+# 假定 inbounds[0] 为 Reality；双入站/新版本下先核对并备份，成功结果也不替代远端客户端验证。
 set -u
 CONF=/usr/local/etc/xray/config.json
 ORIG=$(cat $CONF)

@@ -5,8 +5,8 @@
 #   公司内网/私网 -> 直连
 # 依赖：
 #   - BoostNet 客户端保持运行（兜底出口 7897）
-#   - VPS-Hop 跳板是 BoostNet 订阅内实测能连到 VPS 443 的节点（2026-10-28 全量 41 节点实测，
-#     日本JP1/3/4/7/8、香港HK5、土耳其TR 到 VPS 不通，勿选）
+#   - VPS-Hop 候选来自 2026-10-28 的旧测试；节点可达性需重新验证。
+#   - 2026-11-11 仅同步 VPS 的 8443、新公钥、ML-KEM 参数，本轮未验证 BoostNet 路径。
 mixed-port: 7890
 bind-address: '127.0.0.1'
 allow-lan: false
@@ -24,11 +24,11 @@ proxies:
     port: 7897
 
   # 自建 VPS 固定出口（与 Clash Party 覆写里同一个节点）
-  # VPS IP 被 GFW TCP 级封锁，dialer-proxy 让连接 VPS 的流量先经 BoostNet 跳板出国再连 VPS
+  # dialer-proxy 让连接 VPS 的流量先经 BoostNet 跳板，再由 VPS 访问目标。
   - name: VPS-ChatGPT
     type: vless
     server: 104.129.181.52
-    port: 443
+    port: 8443
     uuid: b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e
     network: tcp
     udp: true
@@ -37,8 +37,9 @@ proxies:
     servername: www.lovelive-anime.jp
     client-fingerprint: chrome
     reality-opts:
-      public-key: A3LmS90cDeGfw5Qv1oVwax8WQOxXkPhdjJGKB8x7k20
+      public-key: IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE
       short-id: 4ea0c2144409a72b
+      support-x25519mlkem768: true
     dialer-proxy: VPS-Hop
 
 # VPS 跳板组：节点来自 hop-nodes.yaml 文件 provider（默认第一个 = 香港HK1），

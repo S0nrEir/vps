@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # 在海外 VPS (Ubuntu / Debian / AlmaLinux 等) 上一键部署 Xray VLESS+Reality
 # 用法: bash server-setup.sh [端口]   # 端口默认 443
-# 幂等：重复执行会重新生成密钥并覆盖配置
+# 覆盖式初始化，非幂等：每次生成新 UUID、密钥和 short-id，并覆盖现有配置。
+# 当前部署主用 Reality 8443；本脚本默认仍为 443，重建时显式传 8443。
+# 仅生成单个 Reality 入站，不恢复 HTTPUpgrade、SSH 加固或 SMTP 防火墙。
 set -euo pipefail
 
 PORT="${1:-443}"
-DEST="www.lovelive-anime.jp:443"  # Reality 伪装目标：必须用普通 X25519 站点
-SNI="www.lovelive-anime.jp"       # 微软/苹果/谷歌等已启用抗量子TLS(MLKEM)，会导致握手失败，勿用
+DEST="www.lovelive-anime.jp:443"  # 本项目测试使用的目标，兼容性取决于实际服务端/客户端版本和配置
+SNI="www.lovelive-anime.jp"       # 客户端 SNI 须匹配；本机 Mihomo/chrome 还需开启 support-x25519mlkem768
 
 [[ $EUID -eq 0 ]] || { echo "请用 root 运行"; exit 1; }
 

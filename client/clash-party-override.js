@@ -1,5 +1,6 @@
 // Clash Party (Mihomo Party) 覆写脚本：ChatGPT 流量走自建 VPS，其余保持原有订阅行为
-// 用法：Clash Party → 覆写 → 新建 → JavaScript → 导入本文件 → 打开"全局"开关 → 重启 Clash Party
+// 用法：Clash Party → 覆写 → 新建 → JavaScript → 导入本文件 → 打开"全局"开关，核对生成的运行配置。
+// 外部编辑文件后需触发配置重新生成；必要时重启，不能只凭母本已修改判断生效。
 function main(config) {
   // 先放行公司内网，再识别桌面进程，覆盖第三方资源和公网 IP 请求。
   config["find-process-mode"] = "always";
@@ -15,7 +16,7 @@ function main(config) {
 
   // 1) VPS-Hop: 连 VPS 专用的跳板组, 与主选择组解耦。
   // 2026-10-28 实测(赔钱机场订阅): 多数美国节点(圣何塞/洛杉矶全系/美国01|下载)与部分日本节点
-  // (东京06)经 mihomo API 端到端测 VPS 443 返回 503(Reality 握手被掐); 而 AWS日本01、美国01-0.1倍、
+  // (东京06)经 mihomo API 端到端测 VPS 443 返回 503(当时未确定根因); 而 AWS日本01、美国01-0.1倍、
   // 新加坡|高速专线-hy2、台湾、日本节点组(199ms)、狮城节点组(244ms) 可通。此前 dialer-proxy 挂在
   // 主选择组上, 用户主选节点或订阅自动刷新选中不可达节点时 ChatGPT 全断(VPN 看似正常) —— 故单列此组。
   // 成员按订阅实际存在的名字过滤(换订阅不会校验失败); 全部不存在时退回主选择组, 再退回 DIRECT。
@@ -49,7 +50,7 @@ function main(config) {
     name: "VPS-ChatGPT",
     type: "vless",
     server: "104.129.181.52",
-    port: 8443,
+    port: 8443, // 2026-11-11 核对实际服务端：8443=Reality，443=HTTPUpgrade。
     uuid: "b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e",
     network: "tcp",
     udp: true,
@@ -61,9 +62,10 @@ function main(config) {
       // 2026-11-11: 重装后服务端换新密钥对(旧私钥不可恢复), UUID/short-id 复用旧值
       "public-key": "IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE",
       "short-id": "4ea0c2144409a72b",
+      // 2026-11-11 实测 Xray 26.11.9 + Mihomo 1.19.32/chrome 需要显式开启此选项。
+      "support-x25519mlkem768": true,
     },
-    // 2026-11-11 晚: 机场对 Reality 逐连接随机篡改, 443→8443 部分规避(auth true 窗口约2-3成);
-    // 服务端同时保留 443=httpupgrade 备用。机场恢复后 git 历史有原版 443 Reality 配置。
+    // 经专用组连接 VPS；本轮赔钱机场 AWS日本01 已验证。旧“机场随机篡改”归因撤回，见修复记录。
     "dialer-proxy": "VPS-Hop",
   });
 

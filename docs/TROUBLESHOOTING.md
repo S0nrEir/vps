@@ -48,7 +48,7 @@ Public Key = `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE`；override 双副本�
 两端全部就位后 VPS-ChatGPT 仍间歇 503，深挖结论：**机场对「节点→VPS:443 的 Reality 握手」
 做订阅级、概率性篡改**（改写 ClientHello 内认证字段，普通 TLS 不受影响）。证据链：
 
-- 服务端 journal：`REALITY: processed invalid connection from 3.112.24.24.243(AWS东京): authentication
+- 服务端 journal：`REALITY: processed invalid connection from 3.112.24.243(AWS东京): authentication
   failed`（ClientHello 已到达、认证被破坏）；同参数自环 100% 通过
 - 排除实验全做了：指纹 chrome/firefox/safari ×3、SNI lovelive/samsung ×2、密钥对 ×2、
   订阅内节点 ×11（AWS东京/新加坡、专线、hy2、台湾）——全部同样失败 → 与客户端参数无关

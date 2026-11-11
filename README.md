@@ -16,6 +16,10 @@
                     └─ 其他所有流量 ──> 原有机场 / 直连（完全不变）
 ```
 
+> ⚠️ **2026-11-11 重装重建**：两次滥用暂停后整机重装 Ubuntu 24.04，服务端已全套重建
+> （新 Reality 公钥 `IOied7...`，UUID/short-id 沿用；**22 入站被 BWH 掐，SSH 走机场跳板连
+> 443**，命令见 node-info.txt）。当晚机场对 Reality 握手有间歇性干扰（auth true/false 随机），
+> 时通时断属机场侧波次，两端配置已自环终审无误——详见 TROUBLESHOOTING 当日两条目。
 > ⚠️ **2026-10-26 起临时变更**：VPS IP 被 GFW 封锁（TCP级），已给 VPS-ChatGPT 节点启用
 > `dialer-proxy: BoostNet` 链式转发——去 VPS 的流量先经机场出国再连 VPS，**ChatGPT 看到的
 > 出口 IP 不变（仍是 VPS）**。迁移换新 IP 后删除 override 里那一行即恢复直连。详见

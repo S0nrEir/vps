@@ -43,6 +43,31 @@ Public Key = `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE`；override 双副本�
 确认 smtp-block enabled → 注入新公钥 + sshd 禁密码 → atd 禁用 → 客户端换 pbk → 重启 mihomo →
 自环测试终审。
 
+### 追记（当晚 20:00+）：机场间歇性 anti-Reality 干扰——重建完成后链路仍未全通的原因
+
+两端全部就位后 VPS-ChatGPT 仍间歇 503，深挖结论：**机场对「节点→VPS:443 的 Reality 握手」
+做订阅级、概率性篡改**（改写 ClientHello 内认证字段，普通 TLS 不受影响）。证据链：
+
+- 服务端 journal：`REALITY: processed invalid connection from 3.112.24.24.243(AWS东京): authentication
+  failed`（ClientHello 已到达、认证被破坏）；同参数自环 100% 通过
+- 排除实验全做了：指纹 chrome/firefox/safari ×3、SNI lovelive/samsung ×2、密钥对 ×2、
+  订阅内节点 ×11（AWS东京/新加坡、专线、hy2、台湾）——全部同样失败 → 与客户端参数无关
+- **间歇性**：同一分钟内日志 `Authentication: true/false` 交替出现，true 窗口期 ChatGPT.exe
+  的连接成功经 VPS 转发（mihomo 日志 `using VPS-ChatGPT` 无 error）→ 干扰按连接随机，
+  已建立的长连接不受影响
+- 排测中试过 httpupgrade 传输整配置切换（两端），未及验证（mihomo 重启竞态）即因机场
+  true 窗口出现而回滚 Reality——该方案保留为后备（配置在 git 历史的本文档 commit 里）
+
+**应对**：保持两端 Reality 配置就位（一通即恢复，ChatGPT.exe 自动重连）+ 后台循环轮换
+VPS-Hop 节点重试（命中即停）。机场这类干扰是波次性的（10-28 同类现象当天自愈）。
+若持续数日不恢复：考虑 httpupgrade/xhttp 传输迁移，或 KiwiVM 免费换机房换 IP
+（顺带解决 GFW 封锁，DNS/客户端用 update-ip.sh 批量换）。
+
+**当晚 web shell 传输翻车记录**（重要教训）：base64 分段传配置多次被吃字符（`echo` 变
+`woecho`、chunk 头 2 字符丢失、引号 EOF），导致 config.json 损坏 xray 起不来——**长内容
+不要走 KiwiVM 网页 shell，临时 sshd 挂 443 后走 SSH 流式传输**（cat > file 二进制安全，
+本轮最终就是靠这条修好的）。基础 shell 只适合 <100 字符的短命令。
+
 ---
 
 ## 2026-11-11（下午）：二次滥用暂停 —— 攻击者清防火墙真发赌场邮件 → 整机重装 + 防火墙升级 + 面板改密

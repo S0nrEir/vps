@@ -1,10 +1,16 @@
 # 部署与排障记录
 
-## 当前结论：2026-11-11 赔钱机场链路已恢复
+## 当前结论：2026-11-11 链路恢复及安全加固已验证
 
 当前主用路径是赔钱机场 AWS日本01 → VPS:8443 Reality → ChatGPT。
 修复了安装覆写未同步、端口/协议错配以及 ML-KEM 握手选项缺失；
-正式入口连续 5 次 trace 返回 `ip=104.129.181.52`，SSH 直连 22 已恢复。
+加固并重启后，正式入口连续 5 次 trace 返回 `ip=104.129.181.52`，SSH 公钥登录正常。
+当前 TCP 入站仅为 22/8443，未加密的 443 HTTPUpgrade 已关闭；普通主选择组改用 AWS日本01，
+普通外网仍从机场出站，百度与公司域名仍命中 DIRECT。
+
+防护包括 IPv4/IPv6 邮件端口封锁、netfilter-persistent、Xray 零 capability 与目录隔离、
+Fail2ban、root 密码锁定、持久日志及安全更新。两台设备的公钥均保留，2FA 最后检查仍待用户绑定。
+配置路径、重启验证、启动告警修复及回滚方式见 [安全加固记录](2026-11-11-SECURITY-HARDENING.md)。
 
 操作、对照实验与备份见 [完整修复记录](2026-11-11-PEIQIAN-DIAGNOSIS.md)，
 当前参数与复查命令见 [README](../README.md)。
@@ -17,7 +23,7 @@
 ### 服务与 SSH
 
 - 重装后部署 Xray 26.11.9，沿用 UUID/short-id，生成了新的 Reality 密钥对。
-  当前实际入站为 **8443 Reality + 443 HTTPUpgrade**。
+  当时入站为 **8443 Reality + 443 HTTPUpgrade**；后续安全加固已关闭 443。
 - 旧记录曾因经机场连 22 没拿到 SSH banner、临时 443 SSH 可用，就推断“BWH 边缘封锁 22”。
   该对照不足以确认过滤方；本次本机直连 22 成功，不需要占用 Xray 的 443 端口。
 - 旧记录中的 `~/.ssh/vps_reinstall` 并非当前电脑使用的密钥；本次恢复的是
@@ -40,11 +46,11 @@
 4. 更换多个候选参数不等于覆盖了所有变量。本次同一跳板、正确参数下，
    仅开启 `support-x25519mlkem768` 就使认证和端到端请求成功。
 5. CONNECT 200 和没有 error 日志不证明上游协议成功，更不能据超时断言流量被静默丢弃。
-   本次隔离测试还验证了 443 HTTPUpgrade 可用。
+   当时的隔离测试还验证了 443 HTTPUpgrade 可用；该入口随后已关闭。
 
 远端历史提交 `d5425f9` 增加的“深夜定案”及“8443 成功率两三成”没有说明如何区分外层/内层认证，
 也未提供可复现的抽样依据，不作为当前结论。保留其部署事实：服务端改为双入站，
-8443 为 Reality、443 为 HTTPUpgrade；本轮恢复沿用这一配置。
+8443 为 Reality、443 为 HTTPUpgrade；链路修复阶段沿用该配置，加固阶段仅保留 8443。
 等待窗口、循环轮换节点、迁移或换机场都不是本次已确认的修复步骤。
 
 旧记录声称仓库与安装覆写已同步，本次发现实际安装副本仍含旧公钥且没有跳板。
@@ -59,7 +65,7 @@ KiwiVM basic shell 曾发生多行命令拼接、字符缺失，导致公钥未�
 只是当时的应急方式，当前无需使用；“少于 100 字符一定安全”也没有保证。
 
 重建时：恢复可信 SSH → 备份/生成配置 → Xray 配置校验 → 重启并查监听 →
-恢复所需 SMTP 防火墙和 SSH 加固 → 同步所有客户端副本 → 触发运行配置重建 →
+恢复当前 netfilter-persistent、SSH/Xray 加固及安全服务 → 同步所有客户端副本 → 触发运行配置重建 →
 **从实际机场路径验证 ChatGPT 出口**。自环可辅助定位，但不能充当最终验收。
 
 ---
@@ -95,16 +101,16 @@ KiwiVM basic shell 曾发生多行命令拼接、字符缺失，导致公钥未�
 "KiwiVM panel password has been changed successfully"。
 
 **当时遗留事项（Xray 与 SSH 已在后续恢复，非当前待办）**：
-- Xray 随重装消失；现已重建为 8443 Reality + 443 HTTPUpgrade，见文首。
+- Xray 随重装消失；之后先重建双入站，再在安全加固时关闭 443，当前仅保留 8443 Reality。
   初始化脚本会生成新 UUID/密钥/short-id 并覆盖配置，不能当作无损修复；当前部署说明以 README 为准。
   重装也会更换 SSH 主机密钥并清空服务器公钥授权，本机密钥文件尚在不代表无需恢复登录。
-- SSH 加固重做：Root shell 把自己的公钥追加回 `/root/.ssh/authorized_keys`（旧的别信）→ `passwd` 换掉临时
-  密码 → 恢复 publickey-only 登录
+- SSH 加固已完成：确认两把公钥归属并保留授权，锁定 root 密码，强制 publickey 登录并启用 Fail2ban。
 - abuse 当时累计 200/1300。再次告警应先保存证据并隔离风险；确认 root 失陷后重建可信系统、轮换凭据并调查入口。
-- 运维：KiwiVM 网页全流程（解封 / 重装 / Root shell / 改面板密码）可无人值守操作；Root shell – basic
-  长命令仍要控制长度（本轮 printf 写 unit 成功，但超长命令有丢字符风险，可拆两条）
+- 运维：本段仅记录当时网页操作，不表示重装、改密和验证器绑定可直接无人值守执行。
+  Root shell – basic 长命令有丢字符风险；恢复 SSH 后优先传输文件。
 
-**复贴：smtp-block.service 全文**（下次重装后照抄重建，`systemctl daemon-reload && systemctl enable --now smtp-block`）：
+**历史 smtp-block.service 全文（已停用，不再照抄部署）**：当前由 netfilter-persistent 在网络启动前
+加载完整规则，见 [安全加固记录](2026-11-11-SECURITY-HARDENING.md)。下面保留旧配置用于复盘。
 
 ```ini
 [Unit]
@@ -161,17 +167,18 @@ martinfowler.com / ping.mcp.so / aif.runwayml.com 等正规域名，STARTTLS 后
    `atq` 空输出；`ls /tmp/netstat_probe` → No such file or directory；`atd` inactive；
    `block-smtp-out` enabled
 
-**遗留 / 待办**：
+**当时遗留事项与后续更正（非当前操作清单）**：
 - ✅ **本条已执行**：当日下午整机重装 + 防火墙升级为 `smtp-block.service`（双向+2525）+ 面板改密，见上方条目。
   以下原判断全部被现实验证（攻击者 4 小时后清规则复犯、真发出邮件）
 - ⚠️ **根级入侵已成事实，清掉一个驻留点不等于干净**。建议尽快在 KiwiVM 里 snapshot 备份后一键重装。
-  重装后第一件事：(a) 把自己的公钥配回 `authorized_keys`（旧的别信）；(b) 重建下面的防火墙 unit
-- 报警器：`dmesg | grep SMTPBLK`，有输出 = 还有残留程序在尝试外发，更要尽快重装
-- abuse 分数不会因处理而清零（年内累计，现 100/1300）；25 端口已封死，该类举报不会再发生
+  当日后续已重装并确认公钥授权；当前防火墙使用文首记录的 netfilter-persistent，不恢复下面的旧 unit。
+- `SMTPBLK` 表示命中了邮件端口阻断规则；也可能由管理员验证产生，需对照测试时间和连接来源调查。
+- abuse 当时累计 100/1300，后续事件已升至 200/1300；封锁端口不能保证不再被举报，
+  root 攻击者可改防火墙，其他端口与 HTTPS 邮件 API 也不在标准 SMTP 端口封锁范围内。
 - 运维知识：SSH 坏掉时用面板左侧 **Root shell – basic**（网页 root 终端，无需密码）；
   该会话**几分钟不动就超时重置**，命令要短、分批连发
 
-**旧版 block-smtp-out.service（仅历史记录）**：已由上方 `smtp-block.service` 替代，不要重复部署旧 unit。
+**旧版 block-smtp-out.service（仅历史记录）**：它和后来的 `smtp-block.service` 均已被当前持久化规则取代。
 
 ```ini
 [Unit]
@@ -188,7 +195,7 @@ ExecStart=/usr/sbin/ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 
 WantedBy=multi-user.target
 ```
 
-可选：再加日志报警行（放在两条 REJECT 之前，重启后也保留）：
+旧版曾使用以下日志行；当前规则已带限速日志，不再向旧 unit 追加：
 `ExecStart=/usr/sbin/iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j LOG --log-prefix SMTPBLK`
 
 **教训**：
@@ -437,7 +444,7 @@ check-host.net 瑞/意/波/土/乌 5/5 TCP 可达，不能代替协议验证。*
 普通 HTTPS 探测只有在实际入站支持该 TLS/SNI 时才有解释价值：
 成功可能只是 Reality 的未认证转发，不能证明 VLESS 可用；
 失败可能是端口、SNI、协议、服务状态或路径问题，不能直接叫作“IP 被墙”。
-当前 443 是无 TLS 的 HTTPUpgrade，不能套用旧的 HTTPS:443 探测命令。
+当前 443 已关闭；正式 Reality 是 8443，不能套用旧的 HTTPS:443 探测命令。
 
 ---
 
@@ -463,7 +470,7 @@ Xray 26.11.9 + Mihomo 1.19.32、chrome 指纹、正确 8443/公钥/short-id 下�
 它排除了远端到 VPS 的一段路径，**没有排除全部网络因素**。
 
 `deploy/desttest.sh` 依赖预建的 `/tmp/selftest.json`，假定首个入站为 Reality，
-会改写正式配置并反复重启服务。它是历史实验脚本，须核对当前双入站并备份后才考虑使用。
+会改写正式配置并反复重启服务。它是历史实验脚本，须核对当前单个 Reality 入站和安全配置并备份后才考虑使用。
 
 ---
 

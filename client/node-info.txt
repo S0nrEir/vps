@@ -14,9 +14,12 @@ Mihomo 必须开启：reality-opts.support-x25519mlkem768: true
 本机验证链路：Clash Party → 赔钱机场 AWS日本01 → VPS:8443 → ChatGPT。
 VPS-Hop 选独立节点时不随主组切换；本次 ChatGPT 出口为 104.129.181.52。
 本轮连续 5 次正式入口 trace 成功，colo=YVR；普通网站仍走机场出口。
+普通主选择组已从故障的新加坡组改为 AWS日本01，实测普通出口 3.112.24.243 / NRT；
+普通请求直接经机场出站，不经过 VPS。百度与公司域名仍按规则直连。
+本机入口：7890 按规则分流；17899 固定 VPS；历史可选 7899 在最后检查时未监听。
 
-注意：443 当前是 VLESS + HTTPUpgrade 入站，path=/hub7q、Host=www.bing.com、无 TLS/flow。
-不能拿 Reality 配置连接；主用配置保持 8443 Reality。
+注意：原 443 HTTPUpgrade 无 TLS/flow，已在 2026-11-11 安全加固时关闭。
+正式入口保持 8443 Reality；安全措施见 docs/2026-11-11-SECURITY-HARDENING.md。
 旧公钥 A3LmS90c... 已失效。实际安装的覆写已同步仓库修正版。
 
 ---------- 一键导入链接 ----------
@@ -35,6 +38,14 @@ SSH       : ssh vps-chatgpt（直连 22；2026-11-11 本机实测恢复）
 服务用户  : xray
 面板      : https://kiwivm.64clouds.com
 
+安全状态（2026-11-11 加固及重启验证）：
+- SSH 仅公钥认证，root 密码已锁定；本机与用户另一台设备的两把 SSH 公钥均保留。
+- TCP 入站仅 22/8443；IPv4/IPv6 的 25/465/587/2525 外连被阻断。
+- netfilter-persistent 开机加载；旧 smtp-block.service 已禁用。
+- Xray 系统特权为零并启用目录隔离；Fail2ban、安全自动更新、持久日志已启用。
+- 内核 6.8.0-147-generic；自动重启关闭；最后检查失败服务为 0、无待重启标记。
+- 面板 2FA 最后检查仍待用户用自己的验证器绑定并保存恢复码。
+
 本轮通过已登录的 VPS 控制台核对主机指纹后更新 known_hosts，并补回本机公钥。
 旧文档的 ~/.ssh/vps_reinstall 不存在于这台电脑；无需占用 443 启动临时 sshd。
 
@@ -48,3 +59,4 @@ SSH       : ssh vps-chatgpt（直连 22；2026-11-11 本机实测恢复）
 6. KiwiVM basic shell 每次只提交一条命令。多行粘贴会拼接，不能替代逐条执行。
 
 完整证据与备份位置见 docs/2026-11-11-PEIQIAN-DIAGNOSIS.md。
+后续防护、重启验证及回滚说明见 docs/2026-11-11-SECURITY-HARDENING.md。

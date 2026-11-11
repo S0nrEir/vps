@@ -50,7 +50,7 @@ function main(config) {
     name: "VPS-ChatGPT",
     type: "vless",
     server: "104.129.181.52",
-    port: 8443, // 2026-11-11 核对实际服务端：8443=Reality，443=HTTPUpgrade。
+    port: 8443, // 2026-11-11 正式 Reality 入口；未加密的 443 备用入口已关闭。
     uuid: "b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e",
     network: "tcp",
     udp: true,

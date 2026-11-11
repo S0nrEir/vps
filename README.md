@@ -4,7 +4,7 @@
 普通上网继续使用订阅分流，公司内网和私网优先直连。固定出口用于保持路由一致，不保证账号免于风控；
 未进入代理的流量也不受这些规则约束。
 
-**2026-11-11 已验证赔钱机场链路恢复**：
+**2026-11-11 已完成链路恢复、安全加固及重启后复测**（时间均为北京时间）：
 
 ```text
 本机 Clash Party
@@ -12,7 +12,9 @@
   └─ 普通请求 → 原订阅规则（机场 / 直连）
 ```
 
-实际服务端为 **8443=Reality，443=HTTPUpgrade**。修复包括同步安装覆写的新公钥和跳板，
+实际服务端主用 **8443=Reality**；随后防护加固已关闭未加密的 443 HTTPUpgrade 备用入口。
+加固与分流复测见 [2026-11-11 安全加固记录](docs/2026-11-11-SECURITY-HARDENING.md)。
+链路修复包括同步安装覆写的新公钥和跳板，
 并增加 `reality-opts.support-x25519mlkem768: true`。
 正式入口连续 5 次 trace 均返回 `104.129.181.52`；SSH 直连 22 也已恢复。
 先前“机场随机篡改/反二级代理”的归因已撤回，详见
@@ -26,18 +28,19 @@
 | VPS | 搬瓦工，Ubuntu 24.04 LTS，Xray 26.11.9 |
 | IP / 机房 | **104.129.181.52**；CA Vancouver CABC_1（2026-10-26 面板记录） |
 | 主用入站 | VLESS + Reality + XTLS Vision，TCP **8443** |
-| 备用入站 | VLESS + HTTPUpgrade，443，path `/hub7q`，Host `www.bing.com`，无 TLS、无 flow |
+| 备用入站 | 原 443 HTTPUpgrade 已在安全加固时关闭；仅保留 8443 Reality |
 | UUID | `b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e` |
 | Reality Public Key | `IOied7moBaXTYvJ2DsNH8FpBtqgy_zfmX1BAaZ_-AxE` |
 | Short ID | `4ea0c2144409a72b` |
 | SNI / dest | `www.lovelive-anime.jp` / `www.lovelive-anime.jp:443` |
 | 本机客户端 | Mihomo 1.19.32；`client-fingerprint: chrome`；`reality-opts.support-x25519mlkem768: true` |
 | 当前跳板 | 赔钱机场 `🇯🇵AWS日本01 \| 电信移动联通推荐`，由 `VPS-Hop` 选择 |
+| 普通上网主组 | `🚀节点选择` 也选 AWS日本01；普通流量直接从机场出站，不经过 VPS |
 | SSH | `ssh vps-chatgpt`，直连 22；本机密钥 `~/.ssh/vps_chatgpt` |
 | 服务端配置 | `/usr/local/etc/xray/config.json`，服务用户 `xray` |
 | 面板 | [KiwiVM](https://kiwivm.64clouds.com) |
 
-不能用 Reality 配置连接当前 443 入站。SNI 以实际服务器配置为准，不按网站所属公司判断兼容性。
+443 已关闭，不再作为备用入口。SNI 以实际服务器配置为准，不按网站所属公司判断兼容性。
 ML-KEM 开关是本次 Xray/Mihomo 组合实测需要的参数，见
 [Mihomo 官方说明](https://wiki.metacubex.one/config/proxies/tls/#reality-optssupport-x25519mlkem768)。
 
@@ -49,6 +52,21 @@ vless://b81fb09f-1e21-4f8d-ade9-58e2f3a3cd0e@104.129.181.52:8443?encryption=none
 
 链接不包含机场跳板，也不能保证导入器设置 ML-KEM 开关。Mihomo 推荐直接使用仓库覆写。
 本次未验证 v2rayN、Shadowrocket、v2rayNG 或移动端；使用时需核对内核兼容性与前置代理。
+
+## 当前防护状态
+
+- **VPS 入站**：TCP 仅开放 SSH 22 与 Reality 8443；允许已建立连接、回环、ICMP 和必要 DHCP 回包。
+  IPv4/IPv6 的入站与转发默认丢弃；普通出站保留，TCP/UDP 25、465、587、2525 被阻断并记录限速日志。
+- **持久化**：`netfilter-persistent` 从 `/etc/iptables/rules.v4`、`rules.v6` 在网络启动前加载。
+  历史 `smtp-block.service` 已禁用，不要同时重新启用它。
+- **SSH**：仅公钥认证，root 旧密码已锁定，禁用 SSH 转发/X11；本机和用户另一台设备的两把公钥均保留。
+  Fail2ban 已启用，10 分钟内 5 次失败封禁 1 小时，重复失败递增至最多 1 天。
+- **Xray**：以 `xray` 用户运行，系统 capability 全部移除，系统目录只读，不能读取 home 或修改内核/防火墙。
+- **系统维护**：安全补丁已安装，重启至 `6.8.0-147-generic`；每日安全更新开启，自动重启关闭。
+  journal 持久保存并限制体积，`atd` 已屏蔽。不存在的 eth1 改为按热插拔启用，最终失败服务为 0。
+
+最后检查时 **KiwiVM 2FA 尚未启用**，需要用用户自己的验证器绑定并保存恢复码。
+加固配置路径、验证边界与备份见 [安全加固记录](docs/2026-11-11-SECURITY-HARDENING.md)。
 
 ## Clash Party 配置
 
@@ -95,8 +113,8 @@ Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" | Select-Object Proces
 它依赖域名识别，不能把未知域名自动认作 Codex 流量。
 
 需要时用 Node.js 运行该脚本，并让目标工具显式使用 `http://127.0.0.1:7899`，验证后再配置自启动。
-本轮未重新验证 7899 监听，不能据旧记录认定当前 Codex 一定使用它；
-本次看到的 Codex 连接由 Mihomo 进程规则送往 VPS。
+2026-11-11 加固后实测 7899 未监听；当前验证正常的入口是 7890、17899。
+不能据旧记录认定当前 Codex 一定使用 7899；本次看到的 Codex 连接由 Mihomo 进程规则送往 VPS。
 
 ### concept-generator 专用入口
 
@@ -115,9 +133,14 @@ curl.exe --max-time 30 --noproxy "" --proxy http://127.0.0.1:7890 https://chatgp
 curl.exe --max-time 30 --noproxy "" --proxy http://127.0.0.1:17899 https://api.openai.com/cdn-cgi/trace
 curl.exe --max-time 30 --noproxy "" --proxy http://127.0.0.1:7890 https://www.cloudflare.com/cdn-cgi/trace
 node client/test-routing.cjs
+# 控制管道从上文 Mihomo 进程命令行取得，不能沿用旧 PID：
+node client/verify-live-routing.cjs '<当前 Mihomo 控制管道完整路径>'
 ```
 
-前两项应为 `ip=104.129.181.52`，本轮 `colo=YVR`；第三项按订阅普通分流，本轮为机场出口。
+前两项应为 `ip=104.129.181.52`，本轮 `colo=YVR`；第三项按订阅普通分流。
+加固后普通机场的新加坡节点拨号超时，主组切至 AWS日本01 后恢复，实测出口为 `3.112.24.243` / NRT。
+机场出口地址可能变化，不应把该地址设成固定断言；ChatGPT 的预期固定出口仍是 VPS。
+实时脚本检查规则模式、VPS-Hop、域名分流及连接快照，不替代前面的实际 HTTPS trace。
 `colo` 是 Cloudflare 接入点，不能单独证明 VPS 物理机房。trace 成功证明该请求链路可用，
 不等于所有应用功能、登录会话和 UDP 都已通过测试。
 
@@ -126,6 +149,7 @@ node client/test-routing.cjs
 | `REALITY authentication failed` | 分清外层机场与内层 VPS 握手；核对实际入站、端口、公钥、short-id、SNI、指纹和 ML-KEM |
 | CONNECT 200 后超时 / delay API 503 | 只说明后续测试失败；继续查机场出网、VPS 端口、认证、目标响应，不能直接归因机场 |
 | GPT 和普通外网都失败 | 检查本地代理是否运行、订阅和跳板是否可用、DNS 与网络 |
+| GPT 正常、普通外网失败 | 检查普通主选择组及其机场节点；不要因此修改 VPS 入站或把普通流量改送 VPS |
 | trace 出口不是 VPS | 核对规则模式、实际运行配置、专用入口及旧连接；确认没有 NO_PROXY 绕过 |
 | trace 正常但应用仍失败 | 对照该进程连接和具体请求错误，再检查应用会话、目标响应；不能只凭 trace 判为缓存问题 |
 
@@ -137,6 +161,10 @@ systemctl status xray
 ss -lntp
 journalctl -u xray -n 50 --no-pager
 /usr/local/bin/xray version
+systemctl is-active xray ssh netfilter-persistent fail2ban
+fail2ban-client status sshd
+journalctl -k -g SMTPBLK --since today
+systemctl --failed --no-pager
 ```
 
 服务 active 不能证明配置已加载；结合监听端口、进程启动时间、配置修改时间和端到端验证判断。
@@ -150,8 +178,11 @@ KiwiVM basic shell 每次提交一条命令，多行粘贴可能被拼接。优�
 [server-setup.sh](server-setup.sh) 是**覆盖式初始化脚本，不是幂等修复工具**。
 默认端口仍为 443；若在新系统建立本项目的 Reality 入口，应显式执行 `bash server-setup.sh 8443`。
 它会生成新 UUID、密钥对和 short-id，覆盖现有配置；只生成单个 Reality 入站，
-不会恢复当前双入站、SSH 加固、服务用户设置或 SMTP 防火墙。服务用户以安装器及实际 unit 为准。
-使用前先备份，重装步骤还需参考[历史安全事件与加固记录](docs/TROUBLESHOOTING.md)。
+不会恢复 SSH 加固、服务用户设置、SMTP 防火墙或其他安全服务。服务用户以安装器及实际 unit 为准。
+当前只保留 8443 Reality，重装时不要恢复旧的未加密 443 备用入口。
+核对配置后可参考 [deploy/harden-vps.sh](deploy/harden-vps.sh) 恢复本机的网络/SSH/Xray 加固，
+但它会替换 filter 表，且不安装 Fail2ban、自动更新或日志配置，不能直接当成通用重装脚本。
+执行范围、10 分钟回滚确认步骤及其余服务配置见[安全加固记录](docs/2026-11-11-SECURITY-HARDENING.md)。
 
 新参数至少同步到 README、node-info、覆写母本与安装副本、独立 YAML，以及使用中的 BoostNet 配置。
 服务器私钥和机场订阅凭据只放在受控备份中，不提交仓库。
@@ -163,7 +194,7 @@ KiwiVM basic shell 每次提交一条命令，多行粘贴可能被拼接。优�
 
 [deploy/desttest.sh](deploy/desttest.sh) 是历史自环实验脚本：依赖 `/tmp/selftest.json`，
 假定第一个入站是 Reality，会反复改写正式配置、重启 Xray，并保留首个成功目标。
-当前双入站下不能直接照搬；认证失败应先核对参数和客户端兼容性。
+不会自动保留所有后续安全配置，不能直接照搬；认证失败应先核对参数和客户端兼容性。
 
 ## 目录与历史费用
 
@@ -172,10 +203,13 @@ F:/vps/
 ├── README.md
 ├── docs/
 │   ├── 2026-11-11-PEIQIAN-DIAGNOSIS.md
+│   ├── 2026-11-11-SECURITY-HARDENING.md
 │   ├── TROUBLESHOOTING.md
 │   └── CONCEPT-GENERATOR-ROUTING-VERIFICATION.md
 ├── server-setup.sh
-├── deploy/desttest.sh
+├── deploy/
+│   ├── desttest.sh
+│   └── harden-vps.sh
 ├── backups/
 └── client/
     ├── clash-party-override.js
@@ -183,6 +217,7 @@ F:/vps/
     ├── boostnet-chain/
     ├── proxy-fallback.js
     ├── test-routing.cjs
+    ├── verify-live-routing.cjs
     └── node-info.txt
 ```
 

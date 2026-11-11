@@ -1,5 +1,9 @@
 # 2026-11-11 赔钱机场链路修复
 
+> 本文记录当日链路修复阶段的配置和证据。后续安全加固已关闭未加密 443 备用入口，
+> 当前只保留 8443 Reality；普通机场主组改用 AWS日本01。最新状态及重启后测试见
+> [安全加固记录](2026-11-11-SECURITY-HARDENING.md)，下文 443 配置仅供历史复盘。
+
 已恢复并验证：`本机 → 赔钱机场 AWS日本01 → VPS 104.129.181.52:8443 → ChatGPT`。
 正式 Clash Party 当前选中赔钱机场，VPS 全局覆写开启。BoostNet 的连通结果未作为验证依据。
 
@@ -28,13 +32,13 @@
 | SSH 重装后主机指纹变化 | 在已登录控制台核对公开指纹，再备份并更新 known_hosts |
 | 补公钥后仍 Permission denied | 网页 basic shell 把多行命令拼接，实际没有写入；改单条提交，保留已有授权并补回本机公钥后登录成功 |
 | 仓库已更新但本机仍失败 | 对照仓库、安装覆写和 work/config.yaml 三层；同步安装副本并通过界面触发配置重新生成 |
-| 443 + Reality 失败 | 当前 443 是 HTTPUpgrade，主用 Reality 改为服务端实际监听的 8443 |
+| 443 + Reality 失败 | 当时 443 是 HTTPUpgrade，主用 Reality 改为服务端实际监听的 8443 |
 | 8443、新公钥仍认证失败 | 同一跳板只改变 ML-KEM 开关做对照：关闭失败，开启后 trace 成功；保留 chrome 指纹 |
 | 将 Authentication true 当作 VPS 成功 | 外层机场也用 Reality；结合连接目标、完整链路和最终 trace 判断 |
 | 覆写开启后仍有机场出口连接 | 清理 11 条旧连接，重新检查：13 条受保护域名连接均走 VPS |
 | HTTPUpgrade 客户端配置方式不明确 | Mihomo 使用 network=ws，ws-opts 中开启 v2ray-http-upgrade，不能直接把 network 写成 httpupgrade |
 
-备用 443 的隔离测试参数（未替换主用 Reality 配置）：
+历史备用 443 的隔离测试参数（当时未替换主用 Reality；该入口现已关闭）：
 
 ```yaml
 type: vless
@@ -80,7 +84,7 @@ dialer-proxy: VPS-Hop
 | 清理旧连接后的实时检查 | 13 条受保护域名连接全部走 VPS-ChatGPT，其它出口 0 条 |
 | 现有 `node client/test-routing.cjs` | 通过：内网优先、受保护域名一致、代理故障不回退直连 |
 
-隔离测试还确认现有 443 HTTPUpgrade 配置可以经赔钱机场访问 ChatGPT，但正式链路使用 8443 Reality。
+隔离测试还确认当时的 443 HTTPUpgrade 配置可以经赔钱机场访问 ChatGPT，但正式链路使用 8443 Reality。
 这些是本轮即时连通性结果，不代表所有机场节点或未来每条连接都已验证。
 隔离测试实例已结束，临时节点凭据副本已删除；本机正式 Clash Party 持续运行。
 

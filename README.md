@@ -91,6 +91,7 @@ Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" | Select-Object Proces
 - 内网域名 `*.cyou-inc.com`、私网和回环规则最先匹配。
 - 之后匹配 `ChatGPT.exe`、`Codex.exe`、`codex.exe` 进程及 OpenAI 系域名，送入 `VPS-ChatGPT`。
   进程规则只作用于进入 Mihomo 且能识别进程的请求；TUN/防火墙未强制拦截应用自行直连。
+- Freesound 主站和音频 CDN 在订阅规则之前匹配 `freesound.org` 后缀并直连。
 - `VPS-ChatGPT` 经 `VPS-Hop` 拨号。成员按订阅名称筛选，候选不等于全部已验证。
   选择独立节点时不随普通上网主组切换；若选择了兜底主组或自动选择组，则仍受该组选择影响。
   无候选且无主组时 `DIRECT` 表示**直连 VPS**，不表示直接访问 ChatGPT。

@@ -22,6 +22,7 @@ for (const rule of [
   assert.ok(config.rules.indexOf(rule) > 0 && config.rules.indexOf(rule) < processIndex);
 }
 assert.ok(processIndex < config.rules.indexOf('DOMAIN-SUFFIX,chatgpt.com,VPS-ChatGPT'));
+assert.equal(config.rules.at(-2), 'DOMAIN-SUFFIX,freesound.org,DIRECT');
 assert.equal(config.rules.at(-1), 'MATCH,DIRECT');
 assert.equal(config.proxies.find(x => x.name === 'VPS-ChatGPT')['dialer-proxy'], 'VPS-Hop');
 const listener = config.listeners.find(x => x.name === 'concept-generator-vps');

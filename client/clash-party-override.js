@@ -104,7 +104,9 @@ function main(config) {
     "DOMAIN-SUFFIX,livekit.cloud,VPS-ChatGPT",
     "DOMAIN-SUFFIX,challenges.cloudflare.com,VPS-ChatGPT",
     "DOMAIN-SUFFIX,featuregates.org,VPS-ChatGPT",
-    "DOMAIN-SUFFIX,statsig.com,VPS-ChatGPT"
+    "DOMAIN-SUFFIX,statsig.com,VPS-ChatGPT",
+    // 机场出口访问 Freesound 返回 403，主站和音频 CDN 经直连可用。
+    "DOMAIN-SUFFIX,freesound.org,DIRECT"
   );
 
   return config;
